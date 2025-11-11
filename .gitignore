@@ -1,0 +1,60 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# Environment / config files
+*.env
+.env.*
+config.json
+secrets.json
+credentials.json
+
+# Jupyter notebooks checkpoints
+.ipynb_checkpoints/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.swp
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Data and model artifacts
+*.ckpt
+*.pt
+*.bin
+*.h5
+*.model
+*.onnx
+*.pkl
+*.npz
+*.npy
+
+# Hugging Face / cache dirs
+.cache/
+datasets/
+outputs/
+results/
+wandb/
+runs/
+
+# IDE/project settings
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS-specific
+.DS_Store
+Thumbs.db
