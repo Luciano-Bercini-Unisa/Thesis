@@ -1,3 +1,9 @@
+# Given a model, a dataset, and a prompt key (prompt pattern/template to use),
+# this script automatically runs a complete LLM-based vulnerability-detection experiment
+# and measures its computational footprint.
+# Each template contains text such as “Detect and describe vulnerabilities in the following Solidity contract: {input}”.
+# It also runs Semantic Analysis of the previous detection output, but for now it's not measured.
+
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch, time, csv, os, pathlib
@@ -6,15 +12,18 @@ import re
 import argparse
 
 from prompts import (
+    # Include the vulnerability-detection templates.
     PROMPT_VD_VARIANT_1, PROMPT_VD_VARIANT_2, PROMPT_VD_VARIANT_3,
     ORIGINAL_PROMPT_VD, ORIGINAL_PROMPT_VD_RP,
-    PROMPT_VD_FEW_SHOTS, PROMPT_VD_FEW_SHOTS_1, PROMPT_VD_FEW_SHOTS_2, PROMPT_VD_FEW_SHOTS_3
+    PROMPT_VD_FEW_SHOTS, PROMPT_VD_FEW_SHOTS_1, PROMPT_VD_FEW_SHOTS_2, PROMPT_VD_FEW_SHOTS_3,
+    # Include also the Semantic Analysis templates.
+    ORIGINAL_PROMPT_SA, ORIGINAL_PROMPT_SA_RP
 )
 
 # ---------- config ----------
 # If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "4000")) # Just a protection against endless/degenerate loops.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "4000"))  # Just a protection against endless/degenerate loops.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -30,18 +39,24 @@ PROMPT_MAP = {
     "FEWSHOTS_3": PROMPT_VD_FEW_SHOTS_3,
 }
 
+# Semantic Analysis prompt map.
+SA_PROMPT_MAP = {
+    "SA": ORIGINAL_PROMPT_SA,
+    "SA_RP": ORIGINAL_PROMPT_SA_RP,
+}
+
 CATEGORIES = [
     # "access_control", "arithmetic", "bad_randomness", "denial_of_service",
     # "front_running", "reentrancy", "short_addresses", "time_manipulation",
-    # "unchecked_low_level_calls"
-
+    # "unchecked_low_level_calls",
     "front_running"
 ]
 
+
 # ---------- utils ----------
 def strip_solidity_comments(src: str) -> str:
-    src = re.sub(r"/\*[\s\S]*?\*/", "", src)     # Block comments.
-    src = re.sub(r"//.*", "", src)               # Line comments.
+    src = re.sub(r"/\*[\s\S]*?\*/", "", src)  # Block comments.
+    src = re.sub(r"//.*", "", src)  # Line comments.
     src = re.sub(r"\n\s*\n+", "\n\n", src)
     return src.strip()
 
@@ -87,6 +102,22 @@ def run_one_inference(tokenizer, mod, system_prompt: str | None, user_prompt: st
     output_text = tokenizer.decode(output_ids)
     return in_len, output_ids.numel(), dt, output_text
 
+
+def run_semantic_analysis(tokenizer, mod, sa_template: str, detection_text: str):
+    """
+    Runs the semantic analyzer prompt on the free-form detection_text
+    and returns (input_tokens, output_tokens, latency_s, sa_reply_text).
+    """
+    sa_user_prompt = get_prompt(sa_template, detection_text)
+    in_len, out_len, secs, sa_text = run_one_inference(
+        tokenizer,
+        mod,
+        system_prompt=None, # ORIGINAL_PROMPT_SA already includes ROLE_SA etc.
+        user_prompt=sa_user_prompt
+    )
+    return in_len, out_len, secs, sa_text.strip()
+
+
 def last_emissions_row(csv_path):
     """
     Return (energy_kwh, emissions_kg) from the last row of emissions.csv of CodeCarbon.
@@ -121,12 +152,13 @@ def main():
     ap.add_argument("--system", default="You are a vulnerability detector for a smart contract.")
     ap.add_argument("--strip_comments", action="store_true")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
+    ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_MAP.keys()))
     args = ap.parse_args()
     print(f"\nLoading model: {args.model}")
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
-    _ = run_one_inference(tokenizer, model, None,"Warm up.")
+    _ = run_one_inference(tokenizer, model, None, "Warm up.")
     # Dedicated directory for CodeCarbon tracker for this model.
     safe_m = args.model.replace("/", "__")
     out_dir = f".codecarbon_{safe_m}"
@@ -138,11 +170,11 @@ def main():
     if new_file:
         # HEADERS.
         writer.writerow([
-            "model_name", "prompt_key", "category", "file_name",
+            "model_name", "prompt_key", "full_prompt", "category", "file_name",
             "input_tokens", "output_tokens", "total_tokens",
             "latency_s", "energy_kwh_total", "emissions_kg_total",
             "energy_kwh_per_sample", "emissions_kg_per_sample",
-            "reply"
+            "reply", "sa_reply"
         ])
     processed = set()
     if args.resume_json and pathlib.Path(args.resume_json).exists():
@@ -153,16 +185,17 @@ def main():
             except Exception:
                 processed = set()
     tpl = PROMPT_MAP[args.prompt]
+    sa_tpl = SA_PROMPT_MAP[args.sa_prompt]
     sys_p = args.system.strip() if args.system else None
-    for cat in CATEGORIES:
-        category_directory = os.path.join(args.dataset, cat)
-        print(f"Analyzing files of vulnerability category: {cat}")
+    for category in CATEGORIES:
+        category_directory = os.path.join(args.dataset, category)
+        print(f"Analyzing files of vulnerability category: {category}")
         if not os.path.isdir(category_directory):
             continue
         for file_name in os.listdir(category_directory):
             if not file_name.endswith(".sol"):
                 continue
-            key = (cat, file_name)
+            key = (category, file_name)
             if key in processed:
                 continue
             with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
@@ -176,8 +209,12 @@ def main():
                 output_dir=out_dir,
                 save_to_file=True,
                 project_name=safe_m,
-                experiment_id=f"{cat}/{file_name}"  # Helps identify rows in emissions.csv
+                experiment_id=f"{category}/{file_name}"  # Helps identify rows in emissions.csv
             )
+            # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
+            # That’s fine for the moment if your priority is wiring the semantics.
+            # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
+            # to after run_semantic_analysis so it wraps both calls.
             tracker.start()
             in_t, out_t, secs, text = run_one_inference(tokenizer, model, sys_p, user_prompt)
             emissions_kg_this = tracker.stop()  # Per-inference kg CO2e.
@@ -186,21 +223,28 @@ def main():
             if emissions_kg_csv is not None:
                 emissions_kg_this = emissions_kg_csv
             # -------------------------------------
-
+            # --- semantic analysis step (second prompt) ---
+            sa_in_t, sa_out_t, sa_secs, sa_text = run_semantic_analysis(
+                tokenizer,
+                model,
+                sa_tpl,
+                text
+            )
+            # ----------------------------------------------
             writer.writerow([
-                args.model, args.prompt, cat, file_name,
+                args.model, args.prompt, user_prompt, category, file_name,
                 in_t, out_t, in_t + out_t,
                 f"{secs:.6f}",
                 f"{energy_kwh_this:.9f}" if energy_kwh_this is not None else "",
                 f"{emissions_kg_this:.9f}" if emissions_kg_this is not None else "",
                 "", "",  # per-sample already recorded, so leave “per_sample” cols empty or duplicate
-                text
+                text,
+                sa_text
             ])
             fout.flush()  # Ensure rows land even if interrupted.
     fout.close()
     print(f"Done -> {args.out_csv}")
 
+
 if __name__ == "__main__":
     main()
-
-
