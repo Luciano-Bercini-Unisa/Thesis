@@ -25,7 +25,7 @@ from prompts import (
 # ---------- config ----------
 # If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "8000"))  # Just a protection against endless/degenerate loops.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "32000")) # Just a protection against endless/degenerate loops.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -130,10 +130,12 @@ def last_emissions_row(csv_path):
             return None, None
         last_line_values = lines[-1].split(",")
         headers = lines[0].split(",")
-        # CodeCarbon tipicamente: timestamp,project,run_id,experiment_id,os,python,codecarbon_version,cpu_count,cpu_model,ram,
-        # gpu_count,gpu_model,longitude,latitude,region,country,cloud_provider,cloud_region,emissions,emissions_rate,energy_consumed,energy_consumed_unit,
-        # duration,ram_total_size,cpu_usage, ... (può variare)
-        # Cerchiamo per nome colonna? Manteniamolo semplice: emissions = last_line_values[idx_e], energy_consumed = last_line_values[idx_kwh]
+        # CodeCarbon typically: timestamp,project,run_id,experiment_id,os,
+        # python,codecarbon_version,cpu_count,cpu_model,ram,
+        # gpu_count,gpu_model,longitude,latitude,region,country,cloud_provider,
+        # cloud_region,emissions,emissions_rate,energy_consumed,energy_consumed_unit,
+        # duration,ram_total_size,cpu_usage, ...
+        # emissions = last_line_values[idx_e], energy_consumed = last_line_values[idx_kwh]
         e_idx = headers.index("emissions") if "emissions" in headers else None
         k_idx = headers.index("energy_consumed") if "energy_consumed" in headers else None
         emissions_kg = float(last_line_values[e_idx]) if e_idx is not None else None
@@ -232,7 +234,7 @@ def main():
             user_prompt = get_prompt(tpl, code)
             # ------- Per-inference Tracking -------
             tracker = EmissionsTracker(
-                measure_power_secs=1,
+                measure_power_secs=10,
                 output_dir=out_dir,
                 save_to_file=True,
                 project_name=safe_m,
