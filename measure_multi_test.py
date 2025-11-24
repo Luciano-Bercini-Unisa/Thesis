@@ -3,6 +3,8 @@
 # and measures its computational footprint.
 # Each template contains text such as “Detect and describe vulnerabilities in the following Solidity contract: {input}”.
 # It also runs Semantic Analysis of the previous detection output, but for now it's not measured.
+# The output is in a CSV and a JSON.
+import glob
 
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
@@ -23,7 +25,7 @@ from prompts import (
 # ---------- config ----------
 # If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "4000"))  # Just a protection against endless/degenerate loops.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "8000"))  # Just a protection against endless/degenerate loops.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -103,12 +105,11 @@ def run_one_inference(tokenizer, mod, system_prompt: str | None, user_prompt: st
     return in_len, output_ids.numel(), dt, output_text
 
 
-def run_semantic_analysis(tokenizer, mod, sa_template: str, detection_text: str):
+def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
     """
     Runs the semantic analyzer prompt on the free-form detection_text
     and returns (input_tokens, output_tokens, latency_s, sa_reply_text).
     """
-    sa_user_prompt = get_prompt(sa_template, detection_text)
     in_len, out_len, secs, sa_text = run_one_inference(
         tokenizer,
         mod,
@@ -123,8 +124,8 @@ def last_emissions_row(csv_path):
     Return (energy_kwh, emissions_kg) from the last row of emissions.csv of CodeCarbon.
     """
     try:
-        with open(csv_path, encoding="utf-8") as f:
-            lines = [ln.strip() for ln in f if ln.strip()]
+        with open(csv_path, encoding="utf-8") as csv_file:
+            lines = [ln.strip() for ln in csv_file if ln.strip()]
         if len(lines) <= 1:
             return None, None
         last_line_values = lines[-1].split(",")
@@ -140,6 +141,31 @@ def last_emissions_row(csv_path):
         return energy_kwh, emissions_kg
     except Exception:
         return None, None
+
+NORMALIZE_MAP = {
+    "access control": "access_control",
+    "arithmetic": "arithmetic",
+    "bad randomness": "bad_randomness",
+    "denial of service": "denial_of_service",
+    "front running": "front_running",
+    "reentrancy": "reentrancy",
+    "short addresses": "short_addresses",
+    "time manipulation": "time_manipulation",
+    "unchecked low level calls": "unchecked_low_level_calls"
+}
+
+
+def parse_sa_output(sa_text: str):
+    pred = {key: 0 for key in NORMALIZE_MAP.values()}
+    for line in sa_text.splitlines():
+        m = re.match(r"\s*([^:]+):\s*([01])", line.strip(), re.I)
+        if not m:
+            continue
+        name, val = m.groups()
+        name = name.lower().strip()
+        if name in NORMALIZE_MAP:
+            pred[NORMALIZE_MAP[name]] = int(val)
+    return pred
 
 
 # ---------- main ----------
@@ -174,7 +200,7 @@ def main():
             "input_tokens", "output_tokens", "total_tokens",
             "latency_s", "energy_kwh_total", "emissions_kg_total",
             "energy_kwh_per_sample", "emissions_kg_per_sample",
-            "reply", "sa_reply"
+            "reply", "sa_prompt", "sa_reply"
         ])
     processed = set()
     if args.resume_json and pathlib.Path(args.resume_json).exists():
@@ -185,8 +211,9 @@ def main():
             except Exception:
                 processed = set()
     tpl = PROMPT_MAP[args.prompt]
-    sa_tpl = SA_PROMPT_MAP[args.sa_prompt]
+    sa_template = SA_PROMPT_MAP[args.sa_prompt]
     sys_p = args.system.strip() if args.system else None
+    json_results = []
     for category in CATEGORIES:
         category_directory = os.path.join(args.dataset, category)
         print(f"Analyzing files of vulnerability category: {category}")
@@ -216,7 +243,7 @@ def main():
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
             tracker.start()
-            in_t, out_t, secs, text = run_one_inference(tokenizer, model, sys_p, user_prompt)
+            in_t, out_t, secs, detection_text = run_one_inference(tokenizer, model, sys_p, user_prompt)
             emissions_kg_this = tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for *this* row (the last appended row).
             energy_kwh_this, emissions_kg_csv = last_emissions_row(pathlib.Path(out_dir, "emissions.csv"))
@@ -224,25 +251,46 @@ def main():
                 emissions_kg_this = emissions_kg_csv
             # -------------------------------------
             # --- semantic analysis step (second prompt) ---
+            sa_user_prompt = get_prompt(sa_template, detection_text)
             sa_in_t, sa_out_t, sa_secs, sa_text = run_semantic_analysis(
                 tokenizer,
                 model,
-                sa_tpl,
-                text
+                sa_user_prompt
             )
-            # ----------------------------------------------
+            # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
+            pred_map = parse_sa_output(sa_text)
+            # Build JSON result entry.
+            json_results.append({
+                "model_name": args.model,
+                "prompt_key": args.prompt,
+                "category": category,
+                "file_name": file_name,
+                "detection_output": detection_text,
+                "semantic_output": sa_text,
+                "prediction_map": pred_map,  # <--- 0/1 dictionary.
+            })
+            # CSV row.
             writer.writerow([
                 args.model, args.prompt, user_prompt, category, file_name,
                 in_t, out_t, in_t + out_t,
                 f"{secs:.6f}",
                 f"{energy_kwh_this:.9f}" if energy_kwh_this is not None else "",
                 f"{emissions_kg_this:.9f}" if emissions_kg_this is not None else "",
-                "", "",  # per-sample already recorded, so leave “per_sample” cols empty or duplicate
-                text,
-                sa_text
+                "", "",  # per-sample already recorded, so leave “per_sample” cols empty or duplicate.
+                detection_text, sa_user_prompt, sa_text
             ])
             fout.flush()  # Ensure rows land even if interrupted.
     fout.close()
+    # ---- Save one JSON per run ----
+    run_dir = f"./results/{args.prompt}"
+    os.makedirs(run_dir, exist_ok=True)
+    # Count existing runs.
+    existing = len(glob.glob(f"{run_dir}/*_output.json"))
+    run_id = existing + 1
+    json_out = f"{run_dir}/{run_id}_output.json"
+    with open(json_out, "w", encoding="utf-8") as jf:
+        json.dump(json_results, jf, indent=2)
+    print(f"Saved JSON results -> {json_out}")
     print(f"Done -> {args.out_csv}")
 
 
