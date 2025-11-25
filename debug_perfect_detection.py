@@ -23,16 +23,18 @@ def analyze_perfect_detection(run_json, gt):
             if the model produced a perfect match for that contract.
         """
     result = {}
-    # Iterate over all predictions from one run.
-    for item in run_json:
-        file_name = item["file_name"]
-        pred_map = item["prediction_map"]
+    # Iterate over all predictions (contracts) from one run.
+    for run in run_json:
+        file_name = run["file_name"]
+        prediction_map = run["prediction_map"]
+        print(prediction_map)
         # Skip files that don't exist in the ground truth.
         if file_name not in gt:
             continue
         gt_map = gt[file_name]
+        print(gt_map)
         # Perfect match?
-        if pred_map == gt_map:
+        if prediction_map == gt_map:
             result[file_name] = True
     return result
 
@@ -51,13 +53,12 @@ if __name__ == "__main__":
     # Initialize all contracts as 'not perfectly detected'.
     overall = {fn: False for fn in ground_truth}
     # Process each run file.
-    for rf in run_files:
-        run_data = load_run_json(rf)
+    for run_file in run_files:
+        run_data = load_run_json(run_file)
         perfect = analyze_perfect_detection(run_data, ground_truth)
         # Mark contracts detected perfectly in *any* run.
         for file_name in perfect:
             overall[file_name] = True
-
     # Print summary.
     perfect_count = sum(1 for v in overall.values() if v)
     print(f"Perfectly detected contracts: {perfect_count}")

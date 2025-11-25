@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/measure_multi_test.py" />
-    <option name="PARAMETERS" value="--model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt VARIANT_1 --out_csv results.csv --strip_comments" />
+    <option name="PARAMETERS" value="--model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt VARIANT_1" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />

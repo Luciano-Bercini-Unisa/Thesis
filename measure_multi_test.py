@@ -3,16 +3,18 @@
 # and measures its computational footprint.
 # Each template contains text such as “Detect and describe vulnerabilities in the following Solidity contract: {input}”.
 # It also runs Semantic Analysis of the previous detection output, but for now it's not measured.
-# The output is in a CSV and a JSON.
-import glob
+# The output are 2:
+# 1. CSV with various stats, including sustainability stats.
+# 2. JSON with various stats, most importantly the prediction map (for quality evaluation).
 
+import glob
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
-
+from vulnerabilities_constants import KEYS
 from prompts import (
     # Include the vulnerability-detection templates.
     PROMPT_VD_VARIANT_1, PROMPT_VD_VARIANT_2, PROMPT_VD_VARIANT_3,
@@ -29,7 +31,7 @@ MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "32000")) # Just a protection a
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
-PROMPT_MAP = {
+PROMPT_TEMPLATES_MAP = {
     "RP": ORIGINAL_PROMPT_VD_RP,
     "ORIGINAL": ORIGINAL_PROMPT_VD,
     "VARIANT_1": PROMPT_VD_VARIANT_1,
@@ -41,32 +43,26 @@ PROMPT_MAP = {
     "FEWSHOTS_3": PROMPT_VD_FEW_SHOTS_3,
 }
 
-# Semantic Analysis prompt map.
-SA_PROMPT_MAP = {
+SA_PROMPT_TEMPLATES_MAP = {
     "SA": ORIGINAL_PROMPT_SA,
     "SA_RP": ORIGINAL_PROMPT_SA_RP,
 }
 
 CATEGORIES = [
+    "time_manipulation",
     # "access_control", "arithmetic", "bad_randomness", "denial_of_service",
-    # "front_running", "reentrancy", "short_addresses", "time_manipulation",
+    # "front_running", "reentrancy", "short_addresses",
     # "unchecked_low_level_calls",
-    "front_running"
+    #"front_running"
 ]
 
 
-# ---------- utils ----------
 def strip_solidity_comments(src: str) -> str:
-    src = re.sub(r"/\*[\s\S]*?\*/", "", src)  # Block comments.
-    src = re.sub(r"//.*", "", src)  # Line comments.
+    src = re.sub(r"/\*[\s\S]*?\*/", "", src)  # Removes block comments.
+    src = re.sub(r"//.*", "", src)  # Remove line comments.
+    # Converts multiple consecutive empty/whitespace-only lines into a single blank line (double newline).
     src = re.sub(r"\n\s*\n+", "\n\n", src)
-    return src.strip()
-
-
-# Prompts.
-with open("prompts.txt", encoding="utf-8") as f:
-    # Read all non-empty lines from a file f, removes extra spaces, and stores them in a list.
-    PROMPTS = [p.strip() for p in f if p.strip()]
+    return src.strip() # Removes leading and trailing whitespace.
 
 
 def load_model(model_name):
@@ -144,30 +140,37 @@ def last_emissions_row(csv_path):
     except Exception:
         return None, None
 
-NORMALIZE_MAP = {
-    "access control": "access_control",
-    "arithmetic": "arithmetic",
-    "bad randomness": "bad_randomness",
-    "denial of service": "denial_of_service",
-    "front running": "front_running",
-    "reentrancy": "reentrancy",
-    "short addresses": "short_addresses",
-    "time manipulation": "time_manipulation",
-    "unchecked low level calls": "unchecked_low_level_calls"
-}
-
 
 def parse_sa_output(sa_text: str):
-    pred = {key: 0 for key in NORMALIZE_MAP.values()}
+    """
+    Parse model semantic-analysis output of the form:
+        Access Control: 1
+        Denial Of Service (DoS): 0
+    and return a dict using the canonical KEYS.
+    """
+    # Initialize all classes to 0
+    prediction_map = {key: 0 for key in KEYS}
     for line in sa_text.splitlines():
-        m = re.match(r"\s*([^:]+):\s*([01])", line.strip(), re.I)
+        line = line.strip()
+        if ":" not in line:
+            continue
+        name_part, val_part = line.split(":", 1)
+        val_part = val_part.strip()
+        # Extract 0/1.
+        m = re.match(r"[01]", val_part)
         if not m:
             continue
-        name, val = m.groups()
-        name = name.lower().strip()
-        if name in NORMALIZE_MAP:
-            pred[NORMALIZE_MAP[name]] = int(val)
-    return pred
+        val = int(m.group(0))
+        # Normalize name:
+        # Remove parentheses, extra spaces, unify case format.
+        clean_name = re.sub(r"\([^)]*\)", "", name_part).strip()
+        # The model prints "Denial Of Service".
+        # KEYS contains the exact same strings → perfect match
+        for key in KEYS:
+            # Case-insensitive match.
+            if clean_name.lower() == key.lower():
+                prediction_map[key] = val
+    return prediction_map
 
 
 # ---------- main ----------
@@ -175,13 +178,20 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root")
-    ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_MAP.keys()))
-    ap.add_argument("--out_csv", default="results.csv")
+    ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES_MAP.keys()))
+    ap.add_argument("--out_csv", default=None)
     ap.add_argument("--system", default="You are a vulnerability detector for a smart contract.")
-    ap.add_argument("--strip_comments", action="store_true")
+    ap.add_argument("--no_strip_comments", action="store_false", default=True, dest="strip_comments")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
-    ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_MAP.keys()))
+    ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
     args = ap.parse_args()
+    # --------- AUTO-ASSIGN OUTPUT CSV IF NOT PROVIDED ---------
+    if args.out_csv is None:
+        run_dir = f"./results/{args.prompt}"
+        os.makedirs(run_dir, exist_ok=True)
+        run_id = len(glob.glob(f"{run_dir}/*_output.json")) + 1
+        args.out_csv = f"{run_dir}/{run_id}.csv"
+    # -----------------------------------------------------------
     print(f"\nLoading model: {args.model}")
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
@@ -192,18 +202,16 @@ def main():
     out_dir = f".codecarbon_{safe_m}"
     pathlib.Path(out_dir).mkdir(exist_ok=True)
     # CSV.
-    new_file = not pathlib.Path(args.out_csv).exists()
-    fout = open(args.out_csv, "a", newline="", encoding="utf-8")
-    writer = csv.writer(fout)
-    if new_file:
-        # HEADERS.
-        writer.writerow([
-            "model_name", "prompt_key", "full_prompt", "category", "file_name",
-            "input_tokens", "output_tokens", "total_tokens",
-            "latency_s", "energy_kwh_total", "emissions_kg_total",
-            "energy_kwh_per_sample", "emissions_kg_per_sample",
-            "reply", "sa_prompt", "sa_reply"
-        ])
+    file_output = open(args.out_csv, "w", newline="", encoding="utf-8")
+    writer = csv.writer(file_output)
+    # HEADERS.
+    writer.writerow([
+        "model_name", "prompt_key", "full_prompt", "category", "file_name",
+        "input_tokens", "output_tokens", "total_tokens",
+        "latency_s", "energy_kwh_total", "emissions_kg_total",
+        "energy_kwh_per_sample", "emissions_kg_per_sample",
+        "reply", "sa_prompt", "sa_reply"
+    ])
     processed = set()
     if args.resume_json and pathlib.Path(args.resume_json).exists():
         with open(args.resume_json, encoding="utf-8") as f:
@@ -212,8 +220,8 @@ def main():
                 processed = {(x.get("category"), x.get("file_name")) for x in prev}
             except Exception:
                 processed = set()
-    tpl = PROMPT_MAP[args.prompt]
-    sa_template = SA_PROMPT_MAP[args.sa_prompt]
+    tpl = PROMPT_TEMPLATES_MAP[args.prompt]
+    sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
     sys_p = args.system.strip() if args.system else None
     json_results = []
     for category in CATEGORIES:
@@ -281,8 +289,8 @@ def main():
                 "", "",  # per-sample already recorded, so leave “per_sample” cols empty or duplicate.
                 detection_text, sa_user_prompt, sa_text
             ])
-            fout.flush()  # Ensure rows land even if interrupted.
-    fout.close()
+            file_output.flush()  # Ensure rows land even if interrupted.
+    file_output.close()
     # ---- Save one JSON per run ----
     run_dir = f"./results/{args.prompt}"
     os.makedirs(run_dir, exist_ok=True)
