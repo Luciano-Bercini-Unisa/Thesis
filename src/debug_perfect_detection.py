@@ -1,4 +1,4 @@
-﻿# Checks which contracts were perfectly classified.
+# Checks which contracts were perfectly classified.
 # This is done by matching the model's semantic-analysis predictions against the SmartBugs ground truth.
 # No output other than printing to console (debug utility).
 import argparse

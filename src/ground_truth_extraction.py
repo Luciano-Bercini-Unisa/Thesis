@@ -1,4 +1,4 @@
-﻿# Utility that extracts the ground-truth vulnerabilities from "smartbugs-curated/vulnerabilities.json".
+# Utility that extracts the ground-truth vulnerabilities from "smartbugs-curated/vulnerabilities.json".
 import json
 from vulnerabilities_constants import KEYS_TO_CATEGORIES, CATEGORIES
 

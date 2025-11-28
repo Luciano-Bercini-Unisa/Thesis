@@ -1,4 +1,4 @@
-﻿CATEGORIES = [
+CATEGORIES = [
     "Access Control",
     "Arithmetic",
     "Bad Randomness",

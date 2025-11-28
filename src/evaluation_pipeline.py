@@ -1,4 +1,4 @@
-﻿"""
+"""
 Orchestrates the full evaluation pipeline:
 1. Extract ground truth from SmartBugs-Curated.
 2. Compute perfect detections.

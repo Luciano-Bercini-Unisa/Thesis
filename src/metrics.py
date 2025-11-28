@@ -1,4 +1,4 @@
-﻿"""
+"""
 Compute evaluation metrics for LLM-based smart-contract vulnerability detection.
 
 This script loads the raw per-contract predictions produced by measure_multi_test.py,
