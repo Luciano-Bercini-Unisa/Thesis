@@ -4,9 +4,11 @@ Orchestrates the full evaluation pipeline:
 2. Compute perfect detections.
 3. Compute aggregated metrics (precision/recall/F1/etc.)
 """
-
+import os
 import subprocess
 import argparse
+
+ROOT = os.path.dirname(__file__)
 
 def run(cmd):
     print(f"\n=== Running: {cmd} ===")
@@ -18,7 +20,10 @@ if __name__ == "__main__":
                         help="Name of results/<folder> to analyze")
     args = parser.parse_args()
 
-    run(f"python debug_perfect_detection.py --folder {args.folder}")
-    run(f"python metrics.py --folder {args.folder}")
+    debug = os.path.join(ROOT, "debug_perfect_detection.py")
+    metrics = os.path.join(ROOT, "metrics.py")
+
+    run(f"python {debug} --folder {args.folder}")
+    run(f"python {metrics} --folder {args.folder}")
 
     print("\n=== Pipeline completed successfully ===")

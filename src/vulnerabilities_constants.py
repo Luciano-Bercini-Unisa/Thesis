@@ -1,5 +1,4 @@
-﻿# IMPORTANT: This is the canonical, fixed order used everywhere.
-KEYS = [
+﻿CATEGORIES = [
     "Access Control",
     "Arithmetic",
     "Bad Randomness",
@@ -10,8 +9,8 @@ KEYS = [
     "Time Manipulation",
     "Unchecked Low Level Calls"
 ]
-# Mapping from dataset category names to KEYS.
-CATEGORY_TO_KEY = {
+
+KEYS_TO_CATEGORIES = {
     "access_control": "Access Control",
     "arithmetic": "Arithmetic",
     "bad_randomness": "Bad Randomness",
@@ -24,7 +23,7 @@ CATEGORY_TO_KEY = {
 }
 
 
-def expected_map(category):
+def expected_map(category_key):
     """
     Given a vulnerability category (e.g. 'reentrancy'),
     return the perfect expected output map:
@@ -38,7 +37,7 @@ def expected_map(category):
             ...
         }
     """
-    out = {k: 0 for k in KEYS}
-    expected_key = CATEGORY_TO_KEY[category]
-    out[expected_key] = 1
-    return out
+    output_map = {k: 0 for k in CATEGORIES} # All zeros.
+    expected_key = KEYS_TO_CATEGORIES[category_key]
+    output_map[expected_key] = 1
+    return output_map

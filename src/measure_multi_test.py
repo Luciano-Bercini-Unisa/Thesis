@@ -14,14 +14,15 @@ import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
-from vulnerabilities_constants import KEYS
+from difflib import get_close_matches
+from vulnerabilities_constants import CATEGORIES
 from prompts import (
     # Include the vulnerability-detection templates.
-    PROMPT_VD_VARIANT_1, PROMPT_VD_VARIANT_2, PROMPT_VD_VARIANT_3,
-    ORIGINAL_PROMPT_VD, ORIGINAL_PROMPT_VD_RP,
-    PROMPT_VD_FEW_SHOTS, PROMPT_VD_FEW_SHOTS_1, PROMPT_VD_FEW_SHOTS_2, PROMPT_VD_FEW_SHOTS_3,
+    ORIGINAL_PROMPT_VD, PROMPT_STRUCTURED_VD,
+    PROMPT_STRUCTURED_VD_VARIANT_1, PROMPT_STRUCTURED_VD_VARIANT_2, PROMPT_STRUCTURED_VD_VARIANT_3,
+    PROMPT_VD_FEW_SHOT, PROMPT_VD_FEW_SHOT_WITH_EXPLANATION,
     # Include also the Semantic Analysis templates.
-    ORIGINAL_PROMPT_SA, ORIGINAL_PROMPT_SA_RP
+    ORIGINAL_PROMPT_SA, PROMPT_STRUCTURED_SA
 )
 
 # ---------- config ----------
@@ -31,29 +32,27 @@ MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "32000")) # Just a protection a
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
-PROMPT_TEMPLATES_MAP = {
-    "RP": ORIGINAL_PROMPT_VD_RP,
+PROMPT_TEMPLATES = {
     "ORIGINAL": ORIGINAL_PROMPT_VD,
-    "VARIANT_1": PROMPT_VD_VARIANT_1,
-    "VARIANT_2": PROMPT_VD_VARIANT_2,
-    "VARIANT_3": PROMPT_VD_VARIANT_3,
-    "FEWSHOTS": PROMPT_VD_FEW_SHOTS,
-    "FEWSHOTS_1": PROMPT_VD_FEW_SHOTS_1,
-    "FEWSHOTS_2": PROMPT_VD_FEW_SHOTS_2,
-    "FEWSHOTS_3": PROMPT_VD_FEW_SHOTS_3,
+    "STRUCTURED": PROMPT_STRUCTURED_VD,
+    "VARIANT_1": PROMPT_STRUCTURED_VD_VARIANT_1,
+    "VARIANT_2": PROMPT_STRUCTURED_VD_VARIANT_2,
+    "VARIANT_3": PROMPT_STRUCTURED_VD_VARIANT_3,
+    "FEW_SHOT": PROMPT_VD_FEW_SHOT,
+    "FEW_SHOT_WITH_EXPLANATION": PROMPT_VD_FEW_SHOT_WITH_EXPLANATION,
 }
 
 SA_PROMPT_TEMPLATES_MAP = {
     "SA": ORIGINAL_PROMPT_SA,
-    "SA_RP": ORIGINAL_PROMPT_SA_RP,
+    "STRUCTURED_SA": PROMPT_STRUCTURED_SA,
 }
 
 CATEGORIES = [
-    "time_manipulation",
-    # "access_control", "arithmetic", "bad_randomness", "denial_of_service",
+    "denial_of_service",
+    # "time_manipulation",
+    # "access_control", "arithmetic", "bad_randomness",
     # "front_running", "reentrancy", "short_addresses",
     # "unchecked_low_level_calls",
-    #"front_running"
 ]
 
 
@@ -86,7 +85,7 @@ def run_one_inference(tokenizer, mod, system_prompt: str | None, user_prompt: st
     input_tensors = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True,
                                                   return_dict=True, return_tensors="pt", padding=True).to(mod.device)
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature;
-    # doesn't matter but it might show warnings).
+    # doesn't matter but, it might show warnings).
     output_generation_settings = dict(max_new_tokens=MAX_NEW_TOKENS, do_sample=(TEMPERATURE > 0),
                                       temperature=TEMPERATURE, top_p=TOP_P)
     # Run generation without grad, measure latency seconds.
@@ -117,68 +116,109 @@ def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
 
 def last_emissions_row(csv_path):
     """
-    Return (energy_kwh, emissions_kg) from the last row of emissions.csv of CodeCarbon.
+    Return (energy_kwh, emissions_kg) from the last row of a CodeCarbon emissions.csv file.
+    Returns (None, None) if the file is missing, empty, or malformed.
     """
+    # File not found or unreadable
     try:
         with open(csv_path, encoding="utf-8") as csv_file:
             lines = [ln.strip() for ln in csv_file if ln.strip()]
-        if len(lines) <= 1:
-            return None, None
-        last_line_values = lines[-1].split(",")
-        headers = lines[0].split(",")
-        # CodeCarbon typically: timestamp,project,run_id,experiment_id,os,
-        # python,codecarbon_version,cpu_count,cpu_model,ram,
-        # gpu_count,gpu_model,longitude,latitude,region,country,cloud_provider,
-        # cloud_region,emissions,emissions_rate,energy_consumed,energy_consumed_unit,
-        # duration,ram_total_size,cpu_usage, ...
-        # emissions = last_line_values[idx_e], energy_consumed = last_line_values[idx_kwh]
-        e_idx = headers.index("emissions") if "emissions" in headers else None
-        k_idx = headers.index("energy_consumed") if "energy_consumed" in headers else None
-        emissions_kg = float(last_line_values[e_idx]) if e_idx is not None else None
-        energy_kwh = float(last_line_values[k_idx]) if k_idx is not None else None
-        return energy_kwh, emissions_kg
-    except Exception:
+    except FileNotFoundError:
+        return None, None
+    except OSError:
         return None, None
 
+    # Not enough data (header only or empty)
+    if len(lines) <= 1:
+        return None, None
 
+    header = lines[0].split(",")
+    last_line = lines[-1].split(",")
+
+    # Missing required fields → treat as malformed
+    try:
+        e_idx = header.index("emissions")
+        k_idx = header.index("energy_consumed")
+    except ValueError:
+        return None, None
+
+    # Malformed numeric values → treat as missing
+    try:
+        emissions_kg = float(last_line[e_idx])
+        energy_kwh = float(last_line[k_idx])
+    except (ValueError, IndexError):
+        return None, None
+
+    return energy_kwh, emissions_kg
+
+
+# ------------ SA PARSING TO GET THE DICTIONARY. ------------
+# Precompute lowercase canonical names
+CANONICAL = {k.lower(): k for k in CATEGORIES}
+
+# Add synonym normalization
+SYNONYMS = {
+    "short address attack": "Short Addresses",
+    "arithmetic issues": "Arithmetic",
+    "integer overflow": "Arithmetic",
+    "unchecked return values": "Unchecked Low Level Calls",
+    "dos": "Denial Of Service",
+    "denial of service": "Denial Of Service",
+}
+
+def normalize_name(s):
+    s = s.lower().strip()
+    # strip markdown
+    s = re.sub(r"[*_`]+", "", s)
+    # strip numbering (e.g., "1. Foo")
+    s = re.sub(r"^\d+\.\s*", "", s)
+    # remove parentheses content
+    s = re.sub(r"\([^)]*\)", "", s).strip()
+
+    # direct synonyms
+    if s in SYNONYMS:
+        return SYNONYMS[s]
+
+    # exact canonical match
+    if s in CANONICAL:
+        return CANONICAL[s]
+
+    # fuzzy match to canonical names
+    match = get_close_matches(s, CANONICAL.keys(), n=1, cutoff=0.6)
+    if match:
+        return CANONICAL[match[0]]
+
+    return None
+
+# Extracts every colon-separated pair anywhere in the text
+# Strips Markdown bold "**Short Address Attack**"
+# Handles lists "1. Reentrancy: 1"
+# Converts synonyms "Short Address Attack" -> Short Addresses"
+# Fuzzy matches "Arithmetic Issues (Integer Overflow)"
+# Ignores junk tokens like <|im_end|>
+# Always returns a clean dict over KEYS
 def parse_sa_output(sa_text: str):
-    """
-    Parse model semantic-analysis output of the form:
-        Access Control: 1
-        Denial Of Service (DoS): 0
-    and return a dict using the canonical KEYS.
-    """
-    # Initialize all classes to 0
-    prediction_map = {key: 0 for key in KEYS}
-    for line in sa_text.splitlines():
-        line = line.strip()
-        if ":" not in line:
-            continue
-        name_part, val_part = line.split(":", 1)
-        val_part = val_part.strip()
-        # Extract 0/1.
-        m = re.match(r"[01]", val_part)
-        if not m:
-            continue
-        val = int(m.group(0))
-        # Normalize name:
-        # Remove parentheses, extra spaces, unify case format.
-        clean_name = re.sub(r"\([^)]*\)", "", name_part).strip()
-        # The model prints "Denial Of Service".
-        # KEYS contains the exact same strings → perfect match
-        for key in KEYS:
-            # Case-insensitive match.
-            if clean_name.lower() == key.lower():
-                prediction_map[key] = val
+    prediction_map = {key: 0 for key in CATEGORIES}
+
+    # find ALL "left: digit" pairs anywhere in the output
+    pairs = re.findall(r"([A-Za-z0-9 ()_\-]+)\s*:\s*([01])", sa_text)
+
+    for raw_name, val in pairs:
+        val = int(val)
+        norm = normalize_name(raw_name)
+        if norm:
+            prediction_map[norm] = val
+
     return prediction_map
 
+# ------------ End. ------------
 
 # ---------- main ----------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root")
-    ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES_MAP.keys()))
+    ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
     ap.add_argument("--out_csv", default=None)
     ap.add_argument("--system", default="You are a vulnerability detector for a smart contract.")
     ap.add_argument("--no_strip_comments", action="store_false", default=True, dest="strip_comments")
@@ -218,9 +258,9 @@ def main():
             try:
                 prev = json.load(f)
                 processed = {(x.get("category"), x.get("file_name")) for x in prev}
-            except Exception:
+            except json.JSONDecodeError:
                 processed = set()
-    tpl = PROMPT_TEMPLATES_MAP[args.prompt]
+    tpl = PROMPT_TEMPLATES[args.prompt]
     sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
     sys_p = args.system.strip() if args.system else None
     json_results = []
@@ -256,7 +296,7 @@ def main():
             in_t, out_t, secs, detection_text = run_one_inference(tokenizer, model, sys_p, user_prompt)
             emissions_kg_this = tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for *this* row (the last appended row).
-            energy_kwh_this, emissions_kg_csv = last_emissions_row(pathlib.Path(out_dir, "emissions.csv"))
+            energy_kwh_this, emissions_kg_csv = last_emissions_row(pathlib.Path(out_dir, "../emissions.csv"))
             if emissions_kg_csv is not None:
                 emissions_kg_this = emissions_kg_csv
             # -------------------------------------
@@ -268,7 +308,7 @@ def main():
                 sa_user_prompt
             )
             # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
-            pred_map = parse_sa_output(sa_text)
+            prediction_map = parse_sa_output(sa_text)
             # Build JSON result entry.
             json_results.append({
                 "model_name": args.model,
@@ -277,7 +317,7 @@ def main():
                 "file_name": file_name,
                 "detection_output": detection_text,
                 "semantic_output": sa_text,
-                "prediction_map": pred_map,  # <--- 0/1 dictionary.
+                "prediction_map": prediction_map,  # <--- 0/1 dictionary.
             })
             # CSV row.
             writer.writerow([

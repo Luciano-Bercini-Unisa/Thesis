@@ -1,5 +1,5 @@
-﻿# Checks which contracts were perfectly classified by matching
-# the model's semantic-analysis predictions against the SmartBugs ground truth.
+﻿# Checks which contracts were perfectly classified.
+# This is done by matching the model's semantic-analysis predictions against the SmartBugs ground truth.
 # No output other than printing to console (debug utility).
 import argparse
 import glob
@@ -14,36 +14,34 @@ def load_run_json(path):
 
 def analyze_perfect_detection(run_json, gt):
     """
-        Compare each contract's predicted vulnerability map to the ground truth.
-        run_json: list of items produced by measure_multi_test.py,
-                  each containing 'file_name' and 'prediction_map'.
-        ground_truth: dict mapping file_name → dict of vulnerability flags.
-        Returns:
-            A dict where keys are file names and values are True
-            if the model produced a perfect match for that contract.
-        """
+    Compare each contract's predicted vulnerability map to the ground truth.
+    run_json: list of items produced by measure_multi_test.py, each containing 'file_name' and 'prediction_map'.
+    ground_truth: dict mapping file_name → dict of vulnerability flags.
+    Returns:
+        A dict where keys are file names and values are True
+        if the model produced a perfect match for that contract.
+    """
     result = {}
     # Iterate over all predictions (contracts) from one run.
     for run in run_json:
-        file_name = run["file_name"]
+        f_name = run["file_name"]
         prediction_map = run["prediction_map"]
         print(prediction_map)
         # Skip files that don't exist in the ground truth.
-        if file_name not in gt:
+        if f_name not in gt:
             continue
-        gt_map = gt[file_name]
+        gt_map = gt[f_name]
         print(gt_map)
         # Perfect match?
         if prediction_map == gt_map:
-            result[file_name] = True
+            result[f_name] = True
     return result
 
 
 if __name__ == "__main__":
     # Parse argument: which folder (inside results/) to evaluate.
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", required=True,
-                        help="Folder inside results/, e.g. ORIGINAL or VARIANT_1")
+    parser.add_argument("--folder", required=True, help="Folder inside results/, e.g. VARIANT_1")
     args = parser.parse_args()
     # Load SmartBugs ground truth once.
     ground_truth = extract_ground_truth()
