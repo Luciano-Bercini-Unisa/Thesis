@@ -1,7 +1,10 @@
+--extra-index-url https://download.pytorch.org/whl/cu130 # Support for CUDA 13.
+torch
+torchvision
 codecarbon==3.0.9
 matplotlib==3.10.7
 numpy==2.3.5
 seaborn==0.13.2
-torch==2.9.1
 transformers==4.57.1
 accelerate
+hf_xet # Faster downloads of the models.

@@ -15,7 +15,7 @@ import json
 import re
 import argparse
 from difflib import get_close_matches
-from vulnerabilities_constants import CATEGORIES
+from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
     # Include the vulnerability-detection templates.
     ORIGINAL_PROMPT_VD, PROMPT_STRUCTURED_VD,
@@ -28,7 +28,7 @@ from prompts import (
 # ---------- config ----------
 # If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "32000")) # Just a protection against endless/degenerate loops.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "4096")) # Just a protection against endless/degenerate loops.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -46,14 +46,6 @@ SA_PROMPT_TEMPLATES_MAP = {
     "SA": ORIGINAL_PROMPT_SA,
     "STRUCTURED_SA": PROMPT_STRUCTURED_SA,
 }
-
-CATEGORIES = [
-    "denial_of_service",
-    # "time_manipulation",
-    # "access_control", "arithmetic", "bad_randomness",
-    # "front_running", "reentrancy", "short_addresses",
-    # "unchecked_low_level_calls",
-]
 
 
 def strip_solidity_comments(src: str) -> str:
@@ -152,9 +144,9 @@ def last_emissions_row(csv_path):
     return energy_kwh, emissions_kg
 
 
-# ------------ SA PARSING TO GET THE DICTIONARY. ------------
-# Precompute lowercase canonical names
-CANONICAL = {k.lower(): k for k in CATEGORIES}
+# ------------ SA PARSING. ------------
+# Map lowercase canonical names → proper category names.
+CANONICAL = {name.lower(): name for name in CATEGORIES}
 
 # Add synonym normalization
 SYNONYMS = {
@@ -168,18 +160,16 @@ SYNONYMS = {
 
 def normalize_name(s):
     s = s.lower().strip()
-    # strip markdown
+    # Strip markdown.
     s = re.sub(r"[*_`]+", "", s)
-    # strip numbering (e.g., "1. Foo")
+    # Strip numbering (e.g., "1. Foo").
     s = re.sub(r"^\d+\.\s*", "", s)
-    # remove parentheses content
+    # Remove parentheses content.
     s = re.sub(r"\([^)]*\)", "", s).strip()
-
-    # direct synonyms
+    # Direct synonyms.
     if s in SYNONYMS:
         return SYNONYMS[s]
-
-    # exact canonical match
+    # Exact canonical match.
     if s in CANONICAL:
         return CANONICAL[s]
 
@@ -198,11 +188,9 @@ def normalize_name(s):
 # Ignores junk tokens like <|im_end|>
 # Always returns a clean dict over KEYS
 def parse_sa_output(sa_text: str):
-    prediction_map = {key: 0 for key in CATEGORIES}
-
-    # find ALL "left: digit" pairs anywhere in the output
+    prediction_map = {name: 0 for name in CATEGORIES}
+    # Find ALL "left: digit" pairs anywhere in the output.
     pairs = re.findall(r"([A-Za-z0-9 ()_\-]+)\s*:\s*([01])", sa_text)
-
     for raw_name, val in pairs:
         val = int(val)
         norm = normalize_name(raw_name)
@@ -264,15 +252,15 @@ def main():
     sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
     sys_p = args.system.strip() if args.system else None
     json_results = []
-    for category in CATEGORIES:
-        category_directory = os.path.join(args.dataset, category)
-        print(f"Analyzing files of vulnerability category: {category}")
+    for cat_key, cat_name in KEYS_TO_CATEGORIES.items():
+        category_directory = os.path.join(args.dataset, str(cat_key))
+        print(f"Analyzing files of vulnerability category: {cat_name}")
         if not os.path.isdir(category_directory):
             continue
         for file_name in os.listdir(category_directory):
             if not file_name.endswith(".sol"):
                 continue
-            key = (category, file_name)
+            key = (cat_name, file_name)
             if key in processed:
                 continue
             with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
@@ -286,7 +274,7 @@ def main():
                 output_dir=out_dir,
                 save_to_file=True,
                 project_name=safe_m,
-                experiment_id=f"{category}/{file_name}"  # Helps identify rows in emissions.csv
+                experiment_id=f"{cat_key}/{file_name}"  # Helps identify rows in emissions.csv
             )
             # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
             # That’s fine for the moment if your priority is wiring the semantics.
@@ -313,7 +301,7 @@ def main():
             json_results.append({
                 "model_name": args.model,
                 "prompt_key": args.prompt,
-                "category": category,
+                "category": cat_name,
                 "file_name": file_name,
                 "detection_output": detection_text,
                 "semantic_output": sa_text,
@@ -321,7 +309,7 @@ def main():
             })
             # CSV row.
             writer.writerow([
-                args.model, args.prompt, user_prompt, category, file_name,
+                args.model, args.prompt, user_prompt, cat_name, file_name,
                 in_t, out_t, in_t + out_t,
                 f"{secs:.6f}",
                 f"{energy_kwh_this:.9f}" if energy_kwh_this is not None else "",
