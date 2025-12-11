@@ -26,9 +26,9 @@ Saves two outputs:
 --sa_prompt SA_KEY            Semantic-analysis template (SA or STRUCTURED_SA)
 
 # 2. Example models you can use.
-- Qwen/Qwen2.5-1.5B-Instruct – extremely fast, good baseline.
-- microsoft/Phi-3.5-mini-instruct – excellent quality/speed ratio.
-- meta-llama/Meta-Llama-3-8B-Instruct – slower, stronger general reasoning.
+- Phi-3.5-mini-instruct – Small LLM.
+- Qwen2.5-7B Instruct – Medium LLM.
+- DeepSeek Coder 33B – Big LLM.
 
 # 3. Example: Basic run with ORIGINAL prompt.
 python src/measure_multi_test.py \

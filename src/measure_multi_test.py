@@ -7,6 +7,8 @@
 # 1. CSV with various stats, including sustainability stats.
 # 2. JSON with various stats, most importantly the prediction map (for quality evaluation).
 
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import glob
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
