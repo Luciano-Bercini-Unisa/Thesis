@@ -14,6 +14,7 @@ import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
+
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -28,7 +29,7 @@ from prompts import (
 # ---------- config ----------
 # If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "4096")) # Just a protection against endless/degenerate loops.
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "2048")) # Just a protection against endless/degenerate loops.
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -111,7 +112,7 @@ def last_emissions_row(csv_path):
     Return (energy_kwh, emissions_kg) from the last row of a CodeCarbon emissions.csv file.
     Returns (None, None) if the file is missing, empty, or malformed.
     """
-    # File not found or unreadable
+    # File not found or unreadable.
     try:
         with open(csv_path, encoding="utf-8") as csv_file:
             lines = [ln.strip() for ln in csv_file if ln.strip()]
@@ -120,21 +121,21 @@ def last_emissions_row(csv_path):
     except OSError:
         return None, None
 
-    # Not enough data (header only or empty)
+    # Not enough data (header only or empty).
     if len(lines) <= 1:
         return None, None
 
     header = lines[0].split(",")
     last_line = lines[-1].split(",")
 
-    # Missing required fields → treat as malformed
+    # Missing required fields → treat as malformed.
     try:
         e_idx = header.index("emissions")
         k_idx = header.index("energy_consumed")
     except ValueError:
         return None, None
 
-    # Malformed numeric values → treat as missing
+    # Malformed numeric values → treat as missing.
     try:
         emissions_kg = float(last_line[e_idx])
         energy_kwh = float(last_line[k_idx])
@@ -274,7 +275,8 @@ def main():
                 output_dir=out_dir,
                 save_to_file=True,
                 project_name=safe_m,
-                experiment_id=f"{cat_key}/{file_name}"  # Helps identify rows in emissions.csv
+                experiment_id=f"{cat_key}/{file_name}",  # Helps identify rows in emissions.csv
+                log_level="error"
             )
             # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
             # That’s fine for the moment if your priority is wiring the semantics.
@@ -318,6 +320,7 @@ def main():
                 detection_text, sa_user_prompt, sa_text
             ])
             file_output.flush()  # Ensure rows land even if interrupted.
+            torch.cuda.empty_cache()
     file_output.close()
     # ---- Save one JSON per run ----
     run_dir = f"./results/{args.prompt}"
