@@ -26,6 +26,7 @@ Saves two outputs:
 --sa_prompt SA_KEY            Semantic-analysis template (SA or STRUCTURED_SA)
 
 # 2. Example models you can use.
+- sshleifer/tiny-gpt2 - Sanity Check LLM.
 - Phi-3.5-mini-instruct – Small LLM.
 - Qwen2.5-7B Instruct – Medium LLM.
 - DeepSeek Coder 33B – Big LLM.
@@ -50,3 +51,9 @@ NOTE: Use it after you have JSON output from the LLM runs.
 
 # 2. Example: Basic Run.
 - python src/evaluation_pipeline.py --folder ORIGINAL
+
+# Running final_report.py
+This script performs the aggregation phase.
+
+# 1. Example: Basic Run.
+- python compute_metrics.py --folder ORIGINAL

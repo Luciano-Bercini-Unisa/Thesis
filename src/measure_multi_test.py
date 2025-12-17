@@ -1,22 +1,22 @@
 # Given a model, a dataset, and a prompt key (prompt pattern/template to use),
 # this script automatically runs a complete LLM-based vulnerability-detection experiment
 # and measures its computational footprint.
-# Each template contains text such as “Detect and describe vulnerabilities in the following Solidity contract: {input}”.
-# It also runs Semantic Analysis of the previous detection output, but for now it's not measured.
-# The output are 2:
-# 1. CSV with various stats, including sustainability stats.
-# 2. JSON with various stats, most importantly the prediction map (for quality evaluation).
+# The output is a directory for the given prompt, which contains a CSV for each run.
+# Each CSV has stats about each contract's inference.
+
+# After that, it runs Semantic Analysis of the previous detection output.
+# The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
+
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 import glob
-from codecarbon import EmissionsTracker
-from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
-
+from codecarbon import EmissionsTracker
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -28,10 +28,9 @@ from prompts import (
     ORIGINAL_PROMPT_SA, PROMPT_STRUCTURED_SA
 )
 
-# ---------- config ----------
-# If GPU CUDA available then use bfloat16 (b stands for Brain in Google Brain), else float32.
+# If GPU CUDA is available then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "1024"))
+MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -56,7 +55,7 @@ def strip_solidity_comments(src: str) -> str:
     src = re.sub(r"//.*", "", src)  # Remove line comments.
     # Converts multiple consecutive empty/whitespace-only lines into a single blank line (double newline).
     src = re.sub(r"\n\s*\n+", "\n\n", src)
-    return src.strip() # Removes leading and trailing whitespace.
+    return src.strip()  # Removes leading and trailing whitespace.
 
 
 def load_model(model_name):
@@ -70,29 +69,85 @@ def get_prompt(prompt_template: str, code: str) -> str:
     return prompt_template.replace("{input}", code)
 
 
-def run_one_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str):
+def run_one_inference(tokenizer, mod, system_prompt, user_prompt):
+    if supports_chat(tokenizer):
+        return run_chat_inference(tokenizer, mod, system_prompt, user_prompt)
+    else:
+        return run_sanity_inference(tokenizer, mod, user_prompt)
+
+
+def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str):
     msgs = []
-    # System prompt = the instruction that defines the model’s role or behavior.
+    # System prompt = the instruction that defines the model’s role or behavior. Could be missing.
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
     msgs.append({"role": "user", "content": user_prompt})
     # Get the token ids and the attention mask.
-    input_tensors = tokenizer.apply_chat_template(msgs, add_generation_prompt=True, tokenize=True,
-                                                  return_dict=True, return_tensors="pt", padding=True).to(mod.device)
-    # Generation settings. Sampling only if temperature > 0 (not all models support temperature;
-    # doesn't matter but, it might show warnings).
-    output_generation_settings = dict(max_new_tokens=MAX_NEW_TOKENS, do_sample=(TEMPERATURE > 0),
-                                      temperature=TEMPERATURE, top_p=TOP_P)
+    input_tensors = tokenizer.apply_chat_template(
+        msgs,
+        add_generation_prompt=True,
+        tokenize=True,
+        truncation=True,
+        return_dict=True,
+        return_tensors="pt",
+        padding=True
+    ).to(mod.device)
+    # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
+    gen_kwargs = dict(
+        **input_tensors,
+        max_new_tokens=MAX_NEW_TOKENS,
+        do_sample=(TEMPERATURE > 0),
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
+        use_cache=True
+    )
     # Run generation without grad, measure latency seconds.
     t0 = time.time()
     # Disable gradient tracking (as we run only inference).
     with torch.no_grad():
-        out = mod.generate(**input_tensors, **output_generation_settings)
+        # Offloaded to save memory (as it was going into OOM).
+        # Check: https://huggingface.co/docs/transformers/en/kv_cache
+        if mod.device.type == "cuda":
+            gen_kwargs["cache_implementation"] = "offloaded"
+        out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
-    output_ids = out[0][in_len:]
-    output_text = tokenizer.decode(output_ids)
-    return in_len, output_ids.numel(), dt, output_text
+    output_text = tokenizer.decode(out[0], skip_special_tokens=True)
+    out_len = out[0].shape[-1] - in_len
+    return in_len, out_len, dt, output_text
+
+
+def run_sanity_inference(tokenizer, mod, user_prompt: str):
+    model_ctx = getattr(mod.config, "n_ctx", None) or getattr(mod.config, "max_position_embeddings", 1024)
+    max_new_tokens = 16
+    safety = 8
+    max_input_tokens = min(256, model_ctx - max_new_tokens - safety)
+    input_tensors = tokenizer(
+        user_prompt,
+        truncation=True,
+        max_length=max_input_tokens,
+        return_tensors="pt"
+    ).to(mod.device)
+    gen_kwargs = dict(
+        **input_tensors,
+        max_new_tokens=max_new_tokens,
+        do_sample=False,
+        temperature=0.0,
+        top_p=1.0,
+        use_cache=True
+    )
+    t0 = time.time()
+    with torch.no_grad():
+        out = mod.generate(**gen_kwargs)
+    dt = time.time() - t0
+    in_len = input_tensors["input_ids"].shape[-1]
+    out_len = out[0].shape[-1] - in_len
+    output_text = tokenizer.decode(out[0], skip_special_tokens=True)
+    return in_len, out_len, dt, output_text
+
+
+def supports_chat(tokenizer):
+    return hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None
 
 
 def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
@@ -103,48 +158,31 @@ def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
     in_len, out_len, secs, sa_text = run_one_inference(
         tokenizer,
         mod,
-        system_prompt=None, # ORIGINAL_PROMPT_SA already includes ROLE_SA etc.
+        system_prompt=None,  # ORIGINAL_PROMPT_SA already includes ROLE_SA etc.
         user_prompt=sa_user_prompt
     )
     return in_len, out_len, secs, sa_text.strip()
 
 
-def last_emissions_row(csv_path):
+def last_energy_kwh(csv_path):
     """
-    Return (energy_kwh, emissions_kg) from the last row of a CodeCarbon emissions.csv file.
-    Returns (None, None) if the file is missing, empty, or malformed.
+    Return energy_kwh from the last row of a CodeCarbon emissions.csv file.
+    Returns None if missing or malformed.
     """
-    # File not found or unreadable.
     try:
         with open(csv_path, encoding="utf-8") as csv_file:
             lines = [ln.strip() for ln in csv_file if ln.strip()]
-    except FileNotFoundError:
-        return None, None
-    except OSError:
-        return None, None
-
-    # Not enough data (header only or empty).
+    except (FileNotFoundError, OSError):
+        return None
     if len(lines) <= 1:
-        return None, None
-
+        return None
     header = lines[0].split(",")
     last_line = lines[-1].split(",")
-
-    # Missing required fields → treat as malformed.
     try:
-        e_idx = header.index("emissions")
         k_idx = header.index("energy_consumed")
-    except ValueError:
-        return None, None
-
-    # Malformed numeric values → treat as missing.
-    try:
-        emissions_kg = float(last_line[e_idx])
-        energy_kwh = float(last_line[k_idx])
+        return float(last_line[k_idx])
     except (ValueError, IndexError):
-        return None, None
-
-    return energy_kwh, emissions_kg
+        return None
 
 
 # ------------ SA PARSING. ------------
@@ -160,6 +198,7 @@ SYNONYMS = {
     "dos": "Denial Of Service",
     "denial of service": "Denial Of Service",
 }
+
 
 def normalize_name(s):
     s = s.lower().strip()
@@ -183,6 +222,7 @@ def normalize_name(s):
 
     return None
 
+
 # Extracts every colon-separated pair anywhere in the text
 # Strips Markdown bold "**Short Address Attack**"
 # Handles lists "1. Reentrancy: 1"
@@ -202,7 +242,6 @@ def parse_sa_output(sa_text: str):
 
     return prediction_map
 
-# ------------ End. ------------
 
 # ---------- main ----------
 def main():
@@ -210,38 +249,34 @@ def main():
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root")
     ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
-    ap.add_argument("--out_csv", default=None)
     ap.add_argument("--system", default="You are a vulnerability detector for a smart contract.")
     ap.add_argument("--no_strip_comments", action="store_false", default=True, dest="strip_comments")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
     args = ap.parse_args()
-    # --------- AUTO-ASSIGN OUTPUT CSV IF NOT PROVIDED ---------
-    if args.out_csv is None:
-        run_dir = f"./results/{args.prompt}"
-        os.makedirs(run_dir, exist_ok=True)
-        run_id = len(glob.glob(f"{run_dir}/*_output.json")) + 1
-        args.out_csv = f"{run_dir}/{run_id}.csv"
-    # -----------------------------------------------------------
+    run_dir = f"./results/{args.prompt}"
+    os.makedirs(run_dir, exist_ok=True)
+    run_id = len(glob.glob(f"{run_dir}/*_output.json")) + 1
+    # The model name uses "/" which would create a subfolder and hence it's replaced by "_".
+    safe_model_name = args.model.replace("/", "__")
+    args.out_csv = f"{run_dir}/{safe_model_name}_run{run_id:02d}.csv"
     print(f"\nLoading model: {args.model}")
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
     _ = run_one_inference(tokenizer, model, None, "Warm up.")
     # Dedicated directory for CodeCarbon tracker for this model.
-    safe_m = args.model.replace("/", "__")
-    out_dir = f".codecarbon_{safe_m}"
+    out_dir = f".codecarbon_{safe_model_name}"
     pathlib.Path(out_dir).mkdir(exist_ok=True)
     # CSV.
     file_output = open(args.out_csv, "w", newline="", encoding="utf-8")
     writer = csv.writer(file_output)
     # HEADERS.
     writer.writerow([
-        "model_name", "prompt_key", "full_prompt", "category", "file_name",
+        "category", "file_name",
         "input_tokens", "output_tokens", "total_tokens",
-        "latency_s", "energy_kwh_total", "emissions_kg_total",
-        "energy_kwh_per_sample", "emissions_kg_per_sample",
-        "reply", "sa_prompt", "sa_reply"
+        "latency_s", "energy_kwh", "emissions_kg",
+        "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
     ])
     processed = set()
     if args.resume_json and pathlib.Path(args.resume_json).exists():
@@ -270,13 +305,13 @@ def main():
                 code = f.read()
             if args.strip_comments:
                 code = strip_solidity_comments(code)
-            user_prompt = get_prompt(tpl, code)
+            vd_prompt = get_prompt(tpl, code)
             # ------- Per-inference Tracking -------
             tracker = EmissionsTracker(
                 measure_power_secs=10,
                 output_dir=out_dir,
                 save_to_file=True,
-                project_name=safe_m,
+                project_name=safe_model_name,
                 experiment_id=f"{cat_key}/{file_name}",  # Helps identify rows in emissions.csv
                 log_level="error"
             )
@@ -285,44 +320,43 @@ def main():
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
             tracker.start()
-            in_t, out_t, secs, detection_text = run_one_inference(tokenizer, model, sys_p, user_prompt)
-            emissions_kg_this = tracker.stop()  # Per-inference kg CO2e.
-            # Read energy_kwh for *this* row (the last appended row).
-            energy_kwh_this, emissions_kg_csv = last_emissions_row(pathlib.Path(out_dir, "../emissions.csv"))
-            if emissions_kg_csv is not None:
-                emissions_kg_this = emissions_kg_csv
-            # -------------------------------------
-            # --- semantic analysis step (second prompt) ---
-            sa_user_prompt = get_prompt(sa_template, detection_text)
-            sa_in_t, sa_out_t, sa_secs, sa_text = run_semantic_analysis(
+            in_t, out_t, secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt)
+            emissions_kg = tracker.stop()  # Per-inference kg CO2e.
+            # Read energy_kwh for the last appended row.
+            energy_kwh = last_energy_kwh(pathlib.Path(out_dir, "emissions.csv"))
+            # --- Semantic analysis step (second prompt) ---
+            sa_prompt = get_prompt(sa_template, vd_reply)
+            sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
                 tokenizer,
                 model,
-                sa_user_prompt
+                sa_prompt
             )
             # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
-            prediction_map = parse_sa_output(sa_text)
+            prediction_map = parse_sa_output(sa_reply)
             # Build JSON result entry.
             json_results.append({
                 "model_name": args.model,
                 "prompt_key": args.prompt,
                 "category": cat_name,
                 "file_name": file_name,
-                "detection_output": detection_text,
-                "semantic_output": sa_text,
-                "prediction_map": prediction_map,  # <--- 0/1 dictionary.
+                "detection_output": vd_reply,
+                "semantic_output": sa_reply,
+                "prediction_map": prediction_map,  # 0/1 dictionary.
             })
             # CSV row.
             writer.writerow([
-                args.model, args.prompt, user_prompt, cat_name, file_name,
+                cat_name, file_name,
                 in_t, out_t, in_t + out_t,
                 f"{secs:.6f}",
-                f"{energy_kwh_this:.9f}" if energy_kwh_this is not None else "",
-                f"{emissions_kg_this:.9f}" if emissions_kg_this is not None else "",
-                "", "",  # per-sample already recorded, so leave “per_sample” cols empty or duplicate.
-                detection_text, sa_user_prompt, sa_text
+                f"{energy_kwh:.9f}" if energy_kwh is not None else "",
+                f"{emissions_kg:.9f}" if emissions_kg is not None else "",
+                vd_prompt, vd_reply, sa_prompt, sa_reply
             ])
             file_output.flush()  # Ensure rows land even if interrupted.
-            torch.cuda.empty_cache()
+            # Explicit GPU cleanup between contracts.
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
     file_output.close()
     # ---- Save one JSON per run ----
     run_dir = f"./results/{args.prompt}"

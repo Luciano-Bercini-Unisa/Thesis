@@ -15,7 +15,7 @@
     <option name="ADD_SOURCE_ROOTS" value="true" />
     <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
     <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/measure_multi_test.py" />
-    <option name="PARAMETERS" value="--model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ORIGINAL" />
+    <option name="PARAMETERS" value="--model sshleifer/tiny-gpt2 --dataset smartbugs-curated/dataset_cleaned --prompt ORIGINAL" />
     <option name="SHOW_COMMAND_LINE" value="false" />
     <option name="EMULATE_TERMINAL" value="false" />
     <option name="MODULE_MODE" value="false" />
