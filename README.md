@@ -3,7 +3,7 @@
 1. python -m venv .venv  
    Create a private Python virtual environment.
 
-2. venv\Scripts\activate (Windows) or source .venv/bin/activate (Linux/macOS)  
+2. .venv\Scripts\activate (Windows) or source .venv/bin/activate (Linux/macOS)  
    Activate the virtual environment.
 
 3. pip install -r requirements.txt  
@@ -76,16 +76,16 @@ deepseek-ai/deepseek-coder-33b-instruct  Large LLM
 # Example runs
 
 ## Zero-shot
-python experiment.py --model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS
 
 ## Zero-shot + Persona
-python experiment.py --model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --persona
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --persona
 
 ## Zero-shot + CoT + Persona
-python experiment.py --model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS_COT --persona
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS_COT --persona
 
 ## Few-shot
-python experiment.py --model Qwen/Qwen2.5-1.5B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt FS
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt FS
 
 
 # Running evaluation.py
