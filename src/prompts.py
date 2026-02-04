@@ -1,9 +1,3 @@
-# Builds prompt templates defining:
-# - The ROLE (Vulnerability Detector or Semantic Analyzer).
-# - Reasoning Cue (e.g. COT = "Think step by step, carefully. ").
-# - Few Shots blocks (FEW_SHOTS_1/2/3).
-# - Task Instructions for the roles.
-# - Input template to inject the contract code.
 # Intended pipeline:
 # 1. Send a Vulnerability Detector (VD) prompt (one of the PROMPT_VD*) with {input} replaced by the Solidity file.
 # 2. Send the model’s free-form answer to a SA prompt to get standardized lines like: Reentrancy: 0, Access Control: 1...
@@ -323,27 +317,10 @@ TASK_STRUCTURED_SA = "Here are nine common vulnerabilities: " + STRUCTURED_VULNS
 INPUT = "\nThe input is:\n{input}."
 
 ################################################ PROMPTS ################################################
-ORIGINAL_PROMPT_SA = ROLE_SA + TASK_SA + COT + INPUT
-PROMPT_STRUCTURED_SA = ROLE_SA + TASK_STRUCTURED_SA + COT + INPUT
+# ORIGINAL_PROMPT_SA = ROLE_SA + TASK_SA + COT + INPUT
+SA = TASK_STRUCTURED_SA + COT + INPUT
 
-ORIGINAL_PROMPT_VD = ROLE_VD + TASK_VD + COT + INPUT
-PROMPT_STRUCTURED_VD = ROLE_VD + TASK_STRUCTURED_VD + COT + INPUT
-
-## ABLATION STUDY.
-
-# Variant 1. [TASK DESCRIPTION]. Think step by step, carefully. The input is [INPUT].
-# Ablation component: ROLE_VD
-PROMPT_STRUCTURED_VD_VARIANT_1 = TASK_STRUCTURED_VD + COT + INPUT
-
-# Variant 2. You are [ROLE]. [TASK DESCRIPTION]. The input is [INPUT].
-# Ablation component: COT
-PROMPT_STRUCTURED_VD_VARIANT_2 = ROLE_VD + TASK_STRUCTURED_VD + INPUT
-
-# Variant 3. [TASK DESCRIPTION]. The input is [INPUT]
-# Ablation component: ROLE_VD, COT
-PROMPT_STRUCTURED_VD_VARIANT_3 = TASK_STRUCTURED_VD + INPUT
-
-
-## ADDITION STUDY
-PROMPT_VD_FEW_SHOT = ROLE_VD + TASK_VD_FEW_SHOT + COT + INPUT
-PROMPT_VD_FEW_SHOT_WITH_EXPLANATION = ROLE_VD + TASK_VD_FEW_SHOT_WITH_EXPLANATION + COT + INPUT
+# PERSONA variants are given through execution flags.
+ZS = TASK_STRUCTURED_VD + INPUT
+ZS_COT = TASK_STRUCTURED_VD + COT + INPUT
+FS = TASK_VD_FEW_SHOT + INPUT

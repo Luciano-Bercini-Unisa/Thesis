@@ -15,7 +15,7 @@ def load_run_json(path):
 def analyze_perfect_detection(run_json, gt):
     """
     Compare each contract's predicted vulnerability map to the ground truth.
-    run_json: list of items produced by measure_multi_test.py, each containing 'file_name' and 'prediction_map'.
+    run_json: list of items produced by execution.py, each containing 'file_name' and 'prediction_map'.
     ground_truth: dict mapping file_name → dict of vulnerability flags.
     Returns:
         A dict where keys are file names and values are True

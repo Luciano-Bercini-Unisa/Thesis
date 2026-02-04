@@ -1,22 +1,23 @@
 """
 Compute evaluation metrics for LLM-based smart-contract vulnerability detection.
 
-This script loads the raw per-contract predictions produced by measure_multi_test.py,
+This script loads the raw per-contract predictions produced by execution.py,
 compares them against the SmartBugs-Curated ground truth (via expected_map),
 and derives per-class TP/FP/TN/FN, precision, recall, specificity, and F1-score.
 It also aggregates results across multiple runs of the same prompt variant and
-writes the averaged metrics to results/<prompt>/average_results.json.
+writes the averaged metrics to results/<model>/<prompt>/average_results.json.
 
 Input:
-    results/<prompt>/*_output.json   (raw model predictions)
+    results/<model>/<prompt>/run_*.json (raw model predictions)
 
 Output:
-    results/<prompt>/average_results.json
+    results/<model>/<prompt>/average_results.json.
 """
 
 import json
-import glob
 import statistics
+from pathlib import Path
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -75,9 +76,13 @@ def compute_metrics(gt, predictions):
     return {"per_class": results, "macro_avg": macro}
 
 
-def avg_metrics_rp(folder):
+def avg_metrics_rp(model: str, prompt: str):
+    results_dir = Path("results") / model / prompt
+
     gt = extract_ground_truth()
-    files = sorted(glob.glob(f"./results/{folder}/*_output.json"))
+    files = sorted(results_dir.glob("run_*.json"))
+    if not files:
+        raise RuntimeError(f"No run_*.json files found in {results_dir}")
     per_class_acc = defaultdict(lambda: defaultdict(list))
     macro_acc = defaultdict(list)
     for fpath in files:
@@ -100,8 +105,14 @@ def avg_metrics_rp(folder):
             if key == "f1_score" and len(arr) > 1:
                 avg_entry["f1_score_std"] = round(statistics.stdev(arr), 4)
         out["per_class"].append(avg_entry)
+
     out["macro_avg"] = {
-        k: round(sum(v) / len(v), 4) for k, v in macro_acc.items()
+        "precision_mean": round(sum(macro_acc["precision"]) / len(macro_acc["precision"]), 4),
+        "recall_mean": round(sum(macro_acc["recall"]) / len(macro_acc["recall"]), 4),
+        "specificity_mean": round(sum(macro_acc["specificity"]) / len(macro_acc["specificity"]), 4),
+        "f1_mean": round(sum(macro_acc["f1_score"]) / len(macro_acc["f1_score"]), 4),
+        "f1_std": round(statistics.stdev(macro_acc["f1_score"]), 4)
+        if len(macro_acc["f1_score"]) > 1 else 0.0
     }
     # Combine all runs for confusion matrix.
     all_predictions = []
@@ -109,15 +120,15 @@ def avg_metrics_rp(folder):
         with open(fpath, "r") as f:
             run = json.load(f)
             all_predictions.extend(run)
-    conf_mats = build_confusion_matrices(gt, all_predictions)
-    out["confusion_matrices"] = {
-        cls: conf_mats[cls].tolist()
-        for cls in CATEGORIES
-    }
-    for cls, mat in conf_mats.items():
-        save_confusion_matrix_png(mat, cls, folder)
 
-    with open(f"./results/{folder}/average_results.json", "w") as f:
+    output_dir = results_dir / "confusion_matrix_heatmaps"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    conf_mats = build_confusion_matrices(gt, all_predictions)
+    for cls, mat in conf_mats.items():
+        save_confusion_matrix_png(mat, cls, output_dir)
+
+    with (results_dir / "average_results.json").open("w") as f:
         json.dump(out, f, indent=2)
 
 
@@ -158,7 +169,7 @@ def build_confusion_matrices(gt, predictions):
     return matrices
 
 
-def save_confusion_matrix_png(matrix, cls, folder):
+def save_confusion_matrix_png(matrix, cls, folder: Path):
     """
     matrix = 2x2 array:
     [TP, FN]
@@ -166,10 +177,6 @@ def save_confusion_matrix_png(matrix, cls, folder):
     """
     tp, fn = matrix[0, 0], matrix[0, 1]
     fp, tn = matrix[1, 0], matrix[1, 1]
-    mat = np.array([
-        [tp, fn],
-        [fp, tn]
-    ])
 
     labels = np.array([
         [f"TP\n{tp}", f"FN\n{fn}"],
@@ -190,13 +197,15 @@ def save_confusion_matrix_png(matrix, cls, folder):
     plt.ylabel("Ground Truth")
     plt.title(cls)
     plt.tight_layout()
-    plt.savefig(f"./results/{folder}/{cls}_matrix.png", dpi=240)
+    output_path = folder / f"{cls}.png"
+    plt.savefig(output_path, dpi=240)
     plt.close()
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--folder", required=True)
+    parser.add_argument("--model", required=True)
+    parser.add_argument("--prompt", required=True)
     args = parser.parse_args()
-    avg_metrics_rp(args.folder)
+    avg_metrics_rp(args.model, args.prompt)

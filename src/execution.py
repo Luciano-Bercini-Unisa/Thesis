@@ -10,22 +10,20 @@
 import os
 
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
-import glob
 import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
+from pathlib import Path
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
     # Include the vulnerability-detection templates.
-    ORIGINAL_PROMPT_VD, PROMPT_STRUCTURED_VD,
-    PROMPT_STRUCTURED_VD_VARIANT_1, PROMPT_STRUCTURED_VD_VARIANT_2, PROMPT_STRUCTURED_VD_VARIANT_3,
-    PROMPT_VD_FEW_SHOT, PROMPT_VD_FEW_SHOT_WITH_EXPLANATION,
+    ZS, ZS_COT, FS, ROLE_VD,
     # Include also the Semantic Analysis templates.
-    ORIGINAL_PROMPT_SA, PROMPT_STRUCTURED_SA
+    SA, ROLE_SA,
 )
 
 # If GPU CUDA is available then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
@@ -35,18 +33,13 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
 PROMPT_TEMPLATES = {
-    "ORIGINAL": ORIGINAL_PROMPT_VD,
-    "STRUCTURED": PROMPT_STRUCTURED_VD,
-    "VARIANT_1": PROMPT_STRUCTURED_VD_VARIANT_1,
-    "VARIANT_2": PROMPT_STRUCTURED_VD_VARIANT_2,
-    "VARIANT_3": PROMPT_STRUCTURED_VD_VARIANT_3,
-    "FEW_SHOT": PROMPT_VD_FEW_SHOT,
-    "FEW_SHOT_WITH_EXPLANATION": PROMPT_VD_FEW_SHOT_WITH_EXPLANATION,
+    "ZS": ZS,
+    "ZS_COT": ZS_COT,
+    "FS": FS,
 }
 
 SA_PROMPT_TEMPLATES_MAP = {
-    "SA": ORIGINAL_PROMPT_SA,
-    "STRUCTURED_SA": PROMPT_STRUCTURED_SA,
+    "SA": SA,
 }
 
 
@@ -158,7 +151,7 @@ def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
     in_len, out_len, secs, sa_text = run_one_inference(
         tokenizer,
         mod,
-        system_prompt=None,  # ORIGINAL_PROMPT_SA already includes ROLE_SA etc.
+        system_prompt=ROLE_SA,
         user_prompt=sa_user_prompt
     )
     return in_len, out_len, secs, sa_text.strip()
@@ -247,29 +240,40 @@ def parse_sa_output(sa_text: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
-    ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root")
+    ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root.")
     ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
-    ap.add_argument("--system", default="You are a vulnerability detector for a smart contract.")
-    ap.add_argument("--no_strip_comments", action="store_false", default=True, dest="strip_comments")
+    ap.add_argument("--persona", action="store_true", help="Enable VD persona via system prompt.")
+    ap.add_argument("--strip_comments", action="store_true", default=True, dest="strip_comments")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
     args = ap.parse_args()
-    run_dir = f"./results/{args.prompt}"
-    os.makedirs(run_dir, exist_ok=True)
-    run_id = len(glob.glob(f"{run_dir}/*_output.json")) + 1
     # The model name uses "/" which would create a subfolder and hence it's replaced by "_".
     safe_model_name = args.model.replace("/", "__")
-    args.out_csv = f"{run_dir}/{safe_model_name}_run{run_id:02d}.csv"
+
+    # Derive effective prompt key (explicitly encode persona)
+    if args.persona:
+        effective_prompt = f"{args.prompt}_PERSONA"
+    else:
+        effective_prompt = args.prompt
+    base_dir = Path("results") / safe_model_name / effective_prompt
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    run_id = len(list(base_dir.glob("run_*.json"))) + 1
+    run_tag = f"run_{run_id:03d}"
+
+    csv_path = base_dir / f"{run_tag}.csv"
+    json_path = base_dir / f"{run_tag}.json"
+
     print(f"\nLoading model: {args.model}")
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
     _ = run_one_inference(tokenizer, model, None, "Warm up.")
     # Dedicated directory for CodeCarbon tracker for this model.
-    out_dir = f".codecarbon_{safe_model_name}"
-    pathlib.Path(out_dir).mkdir(exist_ok=True)
+    out_dir = base_dir / ".codecarbon"
+    out_dir.mkdir(exist_ok=True)
     # CSV.
-    file_output = open(args.out_csv, "w", newline="", encoding="utf-8")
+    file_output = open(csv_path, "w", newline="", encoding="utf-8")
     writer = csv.writer(file_output)
     # HEADERS.
     writer.writerow([
@@ -288,7 +292,10 @@ def main():
                 processed = set()
     tpl = PROMPT_TEMPLATES[args.prompt]
     sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
-    sys_p = args.system.strip() if args.system else None
+    if args.persona:
+        sys_p = ROLE_VD.strip()
+    else:
+        sys_p = None
     json_results = []
     for cat_key, cat_name in KEYS_TO_CATEGORIES.items():
         category_directory = os.path.join(args.dataset, str(cat_key))
@@ -323,7 +330,7 @@ def main():
             in_t, out_t, secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt)
             emissions_kg = tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for the last appended row.
-            energy_kwh = last_energy_kwh(pathlib.Path(out_dir, "emissions.csv"))
+            energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
             # --- Semantic analysis step (second prompt) ---
             sa_prompt = get_prompt(sa_template, vd_reply)
             sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
@@ -336,7 +343,7 @@ def main():
             # Build JSON result entry.
             json_results.append({
                 "model_name": args.model,
-                "prompt_key": args.prompt,
+                "prompt_key": effective_prompt,
                 "category": cat_name,
                 "file_name": file_name,
                 "detection_output": vd_reply,
@@ -359,16 +366,10 @@ def main():
                 torch.cuda.ipc_collect()
     file_output.close()
     # ---- Save one JSON per run ----
-    run_dir = f"./results/{args.prompt}"
-    os.makedirs(run_dir, exist_ok=True)
-    # Count existing runs.
-    existing = len(glob.glob(f"{run_dir}/*_output.json"))
-    run_id = existing + 1
-    json_out = f"{run_dir}/{run_id}_output.json"
-    with open(json_out, "w", encoding="utf-8") as jf:
+    with open(json_path, "w", encoding="utf-8") as jf:
         json.dump(json_results, jf, indent=2)
-    print(f"Saved JSON results -> {json_out}")
-    print(f"Done -> {args.out_csv}")
+    print(f"Saved JSON results: {json_path}")
+    print(f"Saved CSV results: {csv_path}")
 
 
 if __name__ == "__main__":
