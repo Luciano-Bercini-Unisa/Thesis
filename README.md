@@ -69,23 +69,23 @@ Persona conditioning is applied exclusively via the system prompt.
 ## Example models
 
 sshleifer/tiny-gpt2                      Sanity-check model  
-microsoft/Phi-3.5-mini-instruct          Small LLM  
+microsoft/Phi-3.5-mini-instruct          Small LLM (3.8B params)
 Qwen/Qwen2.5-7B-Instruct                 Medium LLM  
 deepseek-ai/deepseek-coder-33b-instruct  Large LLM  
 
 # Example runs
 
 ## Zero-shot
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --runs 5
 
 ## Zero-shot + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --persona
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --persona --runs 5
 
 ## Zero-shot + CoT + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS_COT --persona
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS_COT --persona --runs 5
 
 ## Few-shot
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt FS
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt FS --runs 5
 
 
 # Running evaluation.py

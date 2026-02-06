@@ -9,7 +9,7 @@
 
 import os
 
-os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
 import json
 import re
@@ -26,7 +26,7 @@ from prompts import (
     SA, ROLE_SA,
 )
 
-# If GPU CUDA is available then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
+# If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
@@ -94,7 +94,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         top_p=TOP_P,
         use_cache=True
     )
-    # Run generation without grad, measure latency seconds.
+    # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     # Disable gradient tracking (as we run only inference).
     with torch.no_grad():
@@ -313,6 +313,13 @@ def main():
             if args.strip_comments:
                 code = strip_solidity_comments(code)
             vd_prompt = get_prompt(tpl, code)
+
+            # Emptying the PyTorch CUDA cache so that each inference starts with a clean state (helps with OOM too).
+            # It doesn't free the VRAM of the model (good).
+            # Constant overhead (marginal).
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             # ------- Per-inference Tracking -------
             tracker = EmissionsTracker(
                 measure_power_secs=10,
@@ -322,6 +329,7 @@ def main():
                 experiment_id=f"{cat_key}/{file_name}",  # Helps identify rows in emissions.csv
                 log_level="error"
             )
+
             # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
             # That’s fine for the moment if your priority is wiring the semantics.
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
@@ -331,6 +339,9 @@ def main():
             emissions_kg = tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for the last appended row.
             energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
+            # Helps with OOM errors.
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
             # --- Semantic analysis step (second prompt) ---
             sa_prompt = get_prompt(sa_template, vd_reply)
             sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
@@ -360,10 +371,6 @@ def main():
                 vd_prompt, vd_reply, sa_prompt, sa_reply
             ])
             file_output.flush()  # Ensure rows land even if interrupted.
-            # Explicit GPU cleanup between contracts.
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.ipc_collect()
     file_output.close()
     # ---- Save one JSON per run ----
     with open(json_path, "w", encoding="utf-8") as jf:
