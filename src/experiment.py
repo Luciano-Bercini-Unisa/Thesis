@@ -61,7 +61,7 @@ def main() -> None:
         resume_json = ""
         if args.resume:
             base_dir = ROOT / "results" / safe_model / effective_prompt
-            # Resume from most recent run_*.json, if any.
+            # Resume from the most recent run_*.json, if any.
             runs = sorted(base_dir.glob("run_*.json"))
             if runs:
                 resume_json = str(runs[-1])

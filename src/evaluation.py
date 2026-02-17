@@ -32,5 +32,3 @@ if __name__ == "__main__":
     folder = f"{args.model}/{args.prompt}"
     run([sys.executable, debug, "--folder", folder])
     run([sys.executable, metrics, "--model", args.model, "--prompt", args.prompt])
-
-    print("\n=== Pipeline completed successfully ===")

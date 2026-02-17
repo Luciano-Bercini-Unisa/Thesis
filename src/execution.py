@@ -28,7 +28,8 @@ from prompts import (
 
 # If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-MAX_NEW_TOKENS = int(os.getenv("MAX_NEW_TOKENS", "256"))
+VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "256"))
+SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "64"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
@@ -62,14 +63,14 @@ def get_prompt(prompt_template: str, code: str) -> str:
     return prompt_template.replace("{input}", code)
 
 
-def run_one_inference(tokenizer, mod, system_prompt, user_prompt):
+def run_one_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p):
     if supports_chat(tokenizer):
-        return run_chat_inference(tokenizer, mod, system_prompt, user_prompt)
+        return run_chat_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p)
     else:
         return run_sanity_inference(tokenizer, mod, user_prompt)
 
 
-def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str):
+def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str, max_new_tokens, temperature, top_p):
     msgs = []
     # System prompt = the instruction that defines the model’s role or behavior. Could be missing.
     if system_prompt:
@@ -88,16 +89,15 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
     gen_kwargs = dict(
         **input_tensors,
-        max_new_tokens=MAX_NEW_TOKENS,
-        do_sample=(TEMPERATURE > 0),
-        temperature=TEMPERATURE,
-        top_p=TOP_P,
+        max_new_tokens=max_new_tokens,
+        do_sample=(temperature > 0),
+        temperature=temperature,
+        top_p=top_p,
         use_cache=True
     )
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
-    # Disable gradient tracking (as we run only inference).
-    with torch.no_grad():
+    with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         if mod.device.type == "cuda":
@@ -105,7 +105,8 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
-    output_text = tokenizer.decode(out[0], skip_special_tokens=True)
+    gen_ids = out[0][in_len:] # Decore only the answer, not the full prompt.
+    output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
     return in_len, out_len, dt, output_text
 
@@ -148,12 +149,10 @@ def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
     Runs the semantic analyzer prompt on the free-form detection_text
     and returns (input_tokens, output_tokens, latency_s, sa_reply_text).
     """
-    in_len, out_len, secs, sa_text = run_one_inference(
-        tokenizer,
-        mod,
-        system_prompt=ROLE_SA,
-        user_prompt=sa_user_prompt
-    )
+    in_len, out_len, secs, sa_text = run_one_inference(tokenizer, mod, system_prompt=ROLE_SA,
+                                                       user_prompt=sa_user_prompt,
+                                                       max_new_tokens=SA_MAX_NEW_TOKENS, temperature=0.0, top_p=1.0
+                                                       )
     return in_len, out_len, secs, sa_text.strip()
 
 
@@ -268,7 +267,8 @@ def main():
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
-    _ = run_one_inference(tokenizer, model, None, "Warm up.")
+    _ = run_one_inference(tokenizer, model, None, "Warm up.",
+                          max_new_tokens=16, temperature=0.0, top_p=1.0)
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)
@@ -335,7 +335,9 @@ def main():
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
             tracker.start()
-            in_t, out_t, secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt)
+            in_t, out_t, secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
+                                                            max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
+                                                            top_p=TOP_P)
             emissions_kg = tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for the last appended row.
             energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
