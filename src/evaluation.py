@@ -7,12 +7,14 @@ Orchestrates the full evaluation pipeline:
 import os
 import subprocess
 import argparse
+import sys
 
 ROOT = os.path.dirname(__file__)
 
 def run(cmd):
-    print(f"\n=== Running: {cmd} ===")
-    subprocess.run(cmd, shell=True, check=True)
+    print("\n=== Running ===")
+    print(" ".join(cmd))
+    subprocess.run(cmd, check=True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -28,8 +30,7 @@ if __name__ == "__main__":
     metrics = os.path.join(ROOT, "metrics.py")
 
     folder = f"{args.model}/{args.prompt}"
-    run(f"python {debug} --folder {folder}")
-
-    run(f"python {metrics} --model {args.model} --prompt {args.prompt}")
+    run([sys.executable, debug, "--folder", folder])
+    run([sys.executable, metrics, "--model", args.model, "--prompt", args.prompt])
 
     print("\n=== Pipeline completed successfully ===")
