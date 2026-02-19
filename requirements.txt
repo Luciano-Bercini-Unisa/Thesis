@@ -9,3 +9,4 @@ transformers==4.57.1
 accelerate
 hf_xet # Faster downloads of the models.
 optimum
+bitsandbytes

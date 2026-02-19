@@ -28,7 +28,7 @@ from prompts import (
 
 # If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "512"))
+VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "768"))
 SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "64"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
@@ -54,7 +54,9 @@ def strip_solidity_comments(src: str) -> str:
 
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    mdl = AutoModelForCausalLM.from_pretrained(model_name, dtype=DTYPE, device_map="auto").eval()
+    mdl = (AutoModelForCausalLM.from_pretrained(
+        model_name, dtype=DTYPE, device_map="auto"
+    ).eval())
     return tok, mdl
 
 
@@ -105,7 +107,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
-    gen_ids = out[0][in_len:] # Decore only the answer, not the full prompt.
+    gen_ids = out[0][in_len:]  # Decore only the answer, not the full prompt.
     output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
     return in_len, out_len, dt, output_text
@@ -278,8 +280,12 @@ def main():
     # HEADERS.
     writer.writerow([
         "category", "file_name",
-        "input_tokens", "output_tokens", "total_tokens",
-        "latency_s", "energy_kwh", "emissions_kg",
+        "vd_input_tokens", "vd_output_tokens", "vd_total_tokens",
+        "vd_latency_s", "vd_energy_kwh", "vd_emissions_kg",
+
+        "sa_input_tokens", "sa_output_tokens", "sa_total_tokens",
+        "sa_latency_s", "sa_energy_kwh", "sa_emissions_kg",
+
         "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
     ])
     processed = set()
@@ -320,13 +326,22 @@ def main():
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-            # ------- Per-inference Tracking -------
-            tracker = EmissionsTracker(
+            # Per-inference Tracking.
+            vd_tracker = EmissionsTracker(
                 measure_power_secs=10,
                 output_dir=out_dir,
                 save_to_file=True,
                 project_name=safe_model_name,
-                experiment_id=f"{cat_key}/{file_name}",  # Helps identify rows in emissions.csv
+                experiment_id=f"{cat_key}/{file_name}",
+                log_level="error"
+            )
+
+            sa_tracker = EmissionsTracker(
+                measure_power_secs=10,
+                output_dir=out_dir,
+                save_to_file=True,
+                project_name=safe_model_name,
+                experiment_id=f"SA_{cat_key}/{file_name}",
                 log_level="error"
             )
 
@@ -334,23 +349,26 @@ def main():
             # That’s fine for the moment if your priority is wiring the semantics.
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
-            tracker.start()
-            in_t, out_t, secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
+            vd_tracker.start()
+            vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
                                                             max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
                                                             top_p=TOP_P)
-            emissions_kg = tracker.stop()  # Per-inference kg CO2e.
+            vd_emissions_kg = vd_tracker.stop()  # Per-inference kg CO2e.
             # Read energy_kwh for the last appended row.
-            energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
+            vd_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
             # Helps with OOM errors.
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             # --- Semantic analysis step (second prompt) ---
             sa_prompt = get_prompt(sa_template, vd_reply)
+            sa_tracker.start()
             sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
                 tokenizer,
                 model,
                 sa_prompt
             )
+            sa_emissions_kg = sa_tracker.stop()
+            sa_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
             # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
             prediction_map = parse_sa_output(sa_reply)
             # Build JSON result entry.
@@ -366,10 +384,17 @@ def main():
             # CSV row.
             writer.writerow([
                 cat_name, file_name,
-                in_t, out_t, in_t + out_t,
-                f"{secs:.6f}",
-                f"{energy_kwh:.9f}" if energy_kwh is not None else "",
-                f"{emissions_kg:.9f}" if emissions_kg is not None else "",
+
+                vd_in_t, vd_out_t, vd_in_t + vd_out_t,
+                f"{vd_secs:.6f}",
+                f"{vd_energy_kwh:.9f}" if vd_energy_kwh is not None else "",
+                f"{vd_emissions_kg:.9f}" if vd_emissions_kg is not None else "",
+
+                sa_in_t, sa_out_t, sa_in_t + sa_out_t,
+                f"{sa_secs:.6f}",
+                f"{sa_energy_kwh:.9f}" if sa_energy_kwh is not None else "",
+                f"{sa_emissions_kg:.9f}" if sa_emissions_kg is not None else "",
+
                 vd_prompt, vd_reply, sa_prompt, sa_reply
             ])
             file_output.flush()  # Ensure rows land even if interrupted.
