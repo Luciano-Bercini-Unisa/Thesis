@@ -76,21 +76,6 @@ def main():
             sa_total_latency = df["sa_latency_s"].sum()
             combined_latency = vd_total_latency + sa_total_latency
 
-            vd_latency_per_1k = (
-                vd_total_latency / (vd_total_tokens / 1000)
-                if vd_total_tokens > 0 else 0
-            )
-
-            sa_latency_per_1k = (
-                sa_total_latency / (sa_total_tokens / 1000)
-                if sa_total_tokens > 0 else 0
-            )
-
-            combined_latency_per_1k = (
-                combined_latency / (combined_tokens / 1000)
-                if combined_tokens > 0 else 0
-            )
-
             rows.append({
                 "model": model_name,
                 "prompt": prompt_name,
@@ -110,7 +95,6 @@ def main():
                 "vd_energy_per_1k_tokens": vd_energy_per_1k,
                 # VD latency.
                 "vd_total_latency_s": vd_total_latency,
-                "vd_latency_per_1k_tokens": vd_latency_per_1k,
                 # SA averages.
                 "sa_avg_input_tokens": df["sa_input_tokens"].mean(),
                 "sa_avg_output_tokens": df["sa_output_tokens"].mean(),
@@ -121,12 +105,10 @@ def main():
                 "sa_energy_per_1k_tokens": sa_energy_per_1k,
                 # SA latency.
                 "sa_total_latency_s": sa_total_latency,
-                "sa_latency_per_1k_tokens": sa_latency_per_1k,
                 # Combined totals.
                 "total_energy_kwh": df["vd_energy_kwh"].sum() + df["sa_energy_kwh"].sum(),
                 "total_emissions_kg": df["vd_emissions_kg"].sum() + df["sa_emissions_kg"].sum(),
                 "combined_latency_s": combined_latency,
-                "combined_latency_per_1k_tokens": combined_latency_per_1k,
 
                 "num_contracts": num_contracts,
                 "num_runs": num_runs,

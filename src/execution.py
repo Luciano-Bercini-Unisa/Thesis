@@ -28,8 +28,8 @@ from prompts import (
 
 # If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "768"))
-SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "64"))
+VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "1024"))
+SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "128"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "0.95"))
 
