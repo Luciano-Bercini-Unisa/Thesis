@@ -9,6 +9,8 @@
 3. pip install -r requirements.txt  
    Install all required dependencies.
 
+4. On Linux: pip install flash-attn --no-build-isolation
+
 # Running experiment.py
 
 This script is the single entry point for the full experimental pipeline:
@@ -70,7 +72,7 @@ Persona conditioning is applied exclusively via the system prompt.
 
 sshleifer/tiny-gpt2                      Sanity-check model  
 microsoft/Phi-3.5-mini-instruct          Small LLM (3.8B params)
-Qwen/Qwen2.5-7B-Instruct                 Medium LLM  
+Qwen/Qwen2.5-14B-Instruct                Medium LLM  
 deepseek-ai/deepseek-coder-33b-instruct  Large LLM  
 
 # Example runs

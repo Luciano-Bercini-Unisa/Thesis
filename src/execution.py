@@ -8,6 +8,7 @@
 # The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
+import platform
 
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
@@ -54,9 +55,22 @@ def strip_solidity_comments(src: str) -> str:
 
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map="auto"
-    ).eval())
+    model_kwargs = dict(
+        dtype=DTYPE,
+        device_map="auto"
+    )
+    # Enable FlashAttention only on Linux.
+    if platform.system() == "Linux":
+        try:
+            import flash_attn
+            model_kwargs["attn_implementation"] = "flash_attention_2"
+            print("Using FlashAttention2")
+        except ImportError:
+            print("FlashAttention not installed, using default attention")
+    mdl = AutoModelForCausalLM.from_pretrained(
+        model_name,
+        **model_kwargs
+    ).eval()
     return tok, mdl
 
 
