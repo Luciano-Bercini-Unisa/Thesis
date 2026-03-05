@@ -102,6 +102,16 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         return_tensors="pt",
         padding=False
     ).to(mod.device)
+    # Manual for flash attention.
+    input_ids = input_tensors["input_ids"]
+    seq_len = input_ids.shape[-1]
+
+    input_tensors["position_ids"] = torch.arange(
+        0, seq_len,
+        dtype=torch.long,
+        device=input_ids.device
+    ).unsqueeze(0)
+    #
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
     gen_kwargs = dict(
         **input_tensors,
