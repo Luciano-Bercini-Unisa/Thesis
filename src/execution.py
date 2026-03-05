@@ -57,16 +57,17 @@ def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     model_kwargs = dict(
         dtype=DTYPE,
-        device_map="auto"
+        device_map="auto",
+        attn_implementation="sdpa"
     )
-    # Enable FlashAttention only on Linux.
-    if platform.system() == "Linux":
-        try:
-            import flash_attn
-            model_kwargs["attn_implementation"] = "flash_attention_2"
-            print("Using FlashAttention2")
-        except ImportError:
-            print("FlashAttention not installed, using default attention")
+    # # Enable FlashAttention only on Linux.
+    # if platform.system() == "Linux":
+    #     try:
+    #         import flash_attn
+    #         model_kwargs["attn_implementation"] = "flash_attention_2"
+    #         print("Using FlashAttention2")
+    #     except ImportError:
+    #         print("FlashAttention not installed, using default attention")
     mdl = AutoModelForCausalLM.from_pretrained(
         model_name,
         **model_kwargs
@@ -117,8 +118,8 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
-        if mod.device.type == "cuda":
-            gen_kwargs["cache_implementation"] = "offloaded"
+        # if mod.device.type == "cuda":
+        #     gen_kwargs["cache_implementation"] = "offloaded"
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
