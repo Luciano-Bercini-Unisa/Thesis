@@ -55,7 +55,7 @@ def strip_solidity_comments(src: str) -> str:
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map="auto"
+        model_name, dtype=DTYPE, device_map="auto", attn_implementation="sdpa"
     ).eval())
     return tok, mdl
 
