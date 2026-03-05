@@ -111,8 +111,9 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         top_p=top_p,
         use_cache=True
     )
-    # Run generation without the grad, measure latency seconds.
+    torch.cuda.synchronize() if torch.cuda.is_available() else None
     t0 = time.time()
+    # Run generation without the grad, measure latency seconds.
     with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
@@ -283,8 +284,9 @@ def main():
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
-    _ = run_one_inference(tokenizer, model, None, "Warm up.",
-                          max_new_tokens=16, temperature=0.0, top_p=1.0)
+    _ = run_one_inference(tokenizer, model,  "You are a helpful assistant.",
+                          "Explain what a Solidity smart contract is.",
+                          max_new_tokens=32, temperature=0.0, top_p=1.0)
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)

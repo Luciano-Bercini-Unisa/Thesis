@@ -1,6 +1,6 @@
 # Setup
 
-1. python -m venv .venv  
+1. python -m venv .venv  (or python3)
    Create a private Python virtual environment.
 
 2. .venv\Scripts\activate (Windows) or source .venv/bin/activate (Linux/macOS)  
