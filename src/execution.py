@@ -127,7 +127,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
-        if mod.device.type == "cuda":
+        #if mod.device.type == "cuda":
             #gen_kwargs["cache_implementation"] = "offloaded"
         try:
             out = mod.generate(**gen_kwargs)
