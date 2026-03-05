@@ -8,7 +8,6 @@
 # The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
-import platform
 
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
@@ -55,23 +54,9 @@ def strip_solidity_comments(src: str) -> str:
 
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    model_kwargs = dict(
-        dtype=DTYPE,
-        device_map="auto",
-        attn_implementation="sdpa"
-    )
-    # # Enable FlashAttention only on Linux.
-    # if platform.system() == "Linux":
-    #     try:
-    #         import flash_attn
-    #         model_kwargs["attn_implementation"] = "flash_attention_2"
-    #         print("Using FlashAttention2")
-    #     except ImportError:
-    #         print("FlashAttention not installed, using default attention")
-    mdl = AutoModelForCausalLM.from_pretrained(
-        model_name,
-        **model_kwargs
-    ).eval()
+    mdl = (AutoModelForCausalLM.from_pretrained(
+        model_name, dtype=DTYPE, device_map="auto"
+    ).eval())
     return tok, mdl
 
 
@@ -101,7 +86,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         truncation=True,
         return_dict=True,
         return_tensors="pt",
-        padding=False
+        padding=True
     ).to(mod.device)
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
     gen_kwargs = dict(
@@ -112,14 +97,13 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         top_p=top_p,
         use_cache=True
     )
-    torch.cuda.synchronize() if torch.cuda.is_available() else None
-    t0 = time.time()
     # Run generation without the grad, measure latency seconds.
+    t0 = time.time()
     with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
-        # if mod.device.type == "cuda":
-        #     gen_kwargs["cache_implementation"] = "offloaded"
+        if mod.device.type == "cuda":
+            gen_kwargs["cache_implementation"] = "offloaded"
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
@@ -285,9 +269,8 @@ def main():
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
-    _ = run_one_inference(tokenizer, model,  "You are a helpful assistant.",
-                          "Explain what a Solidity smart contract is.",
-                          max_new_tokens=32, temperature=0.0, top_p=1.0)
+    _ = run_one_inference(tokenizer, model, None, "Warm up.",
+                          max_new_tokens=16, temperature=0.0, top_p=1.0)
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)
