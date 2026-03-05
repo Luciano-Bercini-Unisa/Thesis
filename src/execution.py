@@ -119,7 +119,16 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         if mod.device.type == "cuda":
             gen_kwargs["cache_implementation"] = "offloaded"
-        out = mod.generate(**gen_kwargs)
+        try:
+            out = mod.generate(**gen_kwargs)
+        except RuntimeError as e:
+            if "numel() == 0" in str(e):
+                print("Failed to use flash attention, reverting to sdpa for this generation...")
+                mod.config.attn_implementation = "sdpa"
+                out = mod.generate(**gen_kwargs)
+                mod.config.attn_implementation = "flash_attention_2"
+            else:
+                raise
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
     gen_ids = out[0][in_len:]  # Decore only the answer, not the full prompt.
@@ -143,7 +152,6 @@ def run_sanity_inference(tokenizer, mod, user_prompt: str):
         **input_tensors,
         max_new_tokens=max_new_tokens,
         do_sample=False,
-        temperature=0.0,
         top_p=1.0,
         use_cache=True
     )
