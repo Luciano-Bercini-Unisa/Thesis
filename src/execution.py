@@ -284,9 +284,13 @@ def main():
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
+    # FlashAttention warmup bug workaround
+    model.config.attn_implementation = "sdpa"
     _ = run_one_inference(tokenizer, model,  "You are a helpful assistant.",
                           "Explain what a Solidity smart contract is.",
                           max_new_tokens=32, temperature=0.0, top_p=1.0)
+    # Restore FlashAttention.
+    model.config.attn_implementation = "flash_attention_2"
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)
