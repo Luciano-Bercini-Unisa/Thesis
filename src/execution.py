@@ -95,6 +95,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         do_sample=(temperature > 0),
         temperature=temperature,
         top_p=top_p,
+        renormalize_logits=True,
         use_cache=True
     )
     # Run generation without the grad, measure latency seconds.
