@@ -100,7 +100,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         truncation=True,
         return_dict=True,
         return_tensors="pt",
-        padding=True
+        padding=False
     ).to(mod.device)
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
     gen_kwargs = dict(
