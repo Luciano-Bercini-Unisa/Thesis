@@ -71,6 +71,8 @@ def load_model(model_name):
         model_name,
         **model_kwargs
     ).eval()
+    mdl.generation_config.cache_implementation = "static"
+    mdl.config._attn_implementation = "eager"
     return tok, mdl
 
 
