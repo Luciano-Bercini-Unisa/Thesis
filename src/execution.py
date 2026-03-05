@@ -71,8 +71,6 @@ def load_model(model_name):
         model_name,
         **model_kwargs
     ).eval()
-    mdl.generation_config.cache_implementation = "static"
-    mdl.config._attn_implementation = "eager"
     return tok, mdl
 
 
@@ -104,16 +102,6 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         return_tensors="pt",
         padding=False
     ).to(mod.device)
-    # Manual for flash attention.
-    input_ids = input_tensors["input_ids"]
-    seq_len = input_ids.shape[-1]
-
-    input_tensors["position_ids"] = torch.arange(
-        0, seq_len,
-        dtype=torch.long,
-        device=input_ids.device
-    ).unsqueeze(0)
-    #
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
     gen_kwargs = dict(
         **input_tensors,
@@ -129,18 +117,9 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     with torch.inference_mode():
         # Offloaded to save memory (as it was going into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
-        #if mod.device.type == "cuda":
-            #gen_kwargs["cache_implementation"] = "offloaded"
-        try:
-            out = mod.generate(**gen_kwargs)
-        except RuntimeError as e:
-            if "numel() == 0" in str(e):
-                print("Failed to use flash attention, reverting to sdpa for this generation...")
-                mod.config.attn_implementation = "sdpa"
-                out = mod.generate(**gen_kwargs)
-                mod.config.attn_implementation = "flash_attention_2"
-            else:
-                raise
+        if mod.device.type == "cuda":
+            gen_kwargs["cache_implementation"] = "offloaded"
+        out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
     gen_ids = out[0][in_len:]  # Decore only the answer, not the full prompt.
@@ -164,6 +143,7 @@ def run_sanity_inference(tokenizer, mod, user_prompt: str):
         **input_tensors,
         max_new_tokens=max_new_tokens,
         do_sample=False,
+        temperature=0.0,
         top_p=1.0,
         use_cache=True
     )
@@ -304,13 +284,9 @@ def main():
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
-    # FlashAttention warmup bug workaround
-    model.config.attn_implementation = "sdpa"
     _ = run_one_inference(tokenizer, model,  "You are a helpful assistant.",
                           "Explain what a Solidity smart contract is.",
                           max_new_tokens=32, temperature=0.0, top_p=1.0)
-    # Restore FlashAttention.
-    model.config.attn_implementation = "flash_attention_2"
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)
