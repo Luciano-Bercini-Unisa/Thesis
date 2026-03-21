@@ -58,7 +58,9 @@ def load_model(model_name):
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
     mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map={"": 1}
+        model_name, dtype=DTYPE,
+        device_map="auto",
+        #device_map={"": 1}
     ).eval())
     mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
     print(mdl.generation_config)
