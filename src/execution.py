@@ -30,8 +30,8 @@ from prompts import (
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "1024"))
 SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "128"))
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
-TOP_P = float(os.getenv("TOP_P", "0.5"))
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
+TOP_P = float(os.getenv("TOP_P", "1"))
 
 PROMPT_TEMPLATES = {
     "ZS": ZS,
@@ -96,17 +96,15 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         do_sample=(temperature > 0),
         temperature=temperature,
         top_p=top_p,
-        renormalize_logits=True,
-        remove_invalid_values=True,
         use_cache=True
     )
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
-        # Offloaded to save memory (as it was going into OOM).
+        # Offloaded to save memory (as it goes into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
-        if mod.device.type == "cuda":
-            gen_kwargs["cache_implementation"] = "offloaded"
+        # if mod.device.type == "cuda":
+            # gen_kwargs["cache_implementation"] = "offloaded"
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
