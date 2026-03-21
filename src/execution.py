@@ -57,8 +57,14 @@ def load_model(model_name):
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
+
+    max_memory = {
+        0: "12GiB",
+        1: "12GiB",
+    }
+
     mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map="sequential"
+        model_name, dtype=DTYPE, device_map="auto", max_memory=max_memory,
     ).eval())
     mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
     print(mdl.generation_config)
