@@ -84,7 +84,6 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         msgs,
         add_generation_prompt=True,
         tokenize=True,
-        truncation=True,
         return_dict=True,
         return_tensors="pt",
         padding=True
