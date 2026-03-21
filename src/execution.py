@@ -16,7 +16,7 @@ import re
 import argparse
 from pathlib import Path
 from codecarbon import EmissionsTracker
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -50,7 +50,6 @@ def strip_solidity_comments(src: str) -> str:
     # Converts multiple consecutive empty/whitespace-only lines into a single blank line (double newline).
     src = re.sub(r"\n\s*\n+", "\n\n", src)
     return src.strip()  # Removes leading and trailing whitespace.
-    return src.strip()  # Removes leading and trailing whitespace.
 
 
 def load_model(model_name):
@@ -61,6 +60,8 @@ def load_model(model_name):
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE, device_map="auto"
     ).eval())
+    mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
+    print(mdl.generation_config)
     return tok, mdl
 
 
@@ -102,16 +103,30 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         use_cache=True,
         pad_token_id=tokenizer.pad_token_id,
         eos_token_id=tokenizer.eos_token_id,
+        renormalize_logits=True,
+        remove_invalid_values=True,
     )
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
-        outputs = mod(**input_tensors)
-        logits = outputs.logits[:, -1, :]
-        print("has_nan:", torch.isnan(logits).any().item())
-        print("has_inf:", torch.isinf(logits).any().item())
-        print("min:", logits.min().item())
-        print("max:", logits.max().item())
+        outputs = mod(**input_tensors, use_cache=True)
+        next_token_scores = outputs.logits[:, -1, :]
+
+        print("logits has_nan:", torch.isnan(next_token_scores).any().item(), flush=True)
+        print("logits has_inf:", torch.isinf(next_token_scores).any().item(), flush=True)
+        print("logits min:", next_token_scores.min().item(), flush=True)
+        print("logits max:", next_token_scores.max().item(), flush=True)
+
+        probs = torch.softmax(next_token_scores, dim=-1)
+
+        print("probs has_nan:", torch.isnan(probs).any().item(), flush=True)
+        print("probs has_inf:", torch.isinf(probs).any().item(), flush=True)
+        print("probs min:", probs.min().item(), flush=True)
+        print("probs max:", probs.max().item(), flush=True)
+        print("probs sum:", probs.sum(dim=-1), flush=True)
+
+        next_token = torch.multinomial(probs, num_samples=1)
+        print("sampled ok:", next_token.item(), flush=True)
         # Offloaded to save memory (as it goes into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         # if mod.device.type == "cuda":
@@ -282,7 +297,7 @@ def main():
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
     _ = run_one_inference(tokenizer, model, None, "Warm up.",
-                          max_new_tokens=16, temperature=0.0, top_p=1.0)
+                          max_new_tokens=16, temperature=TEMPERATURE, top_p=TOP_P)
     # Dedicated directory for CodeCarbon tracker for this model.
     out_dir = base_dir / ".codecarbon"
     out_dir.mkdir(exist_ok=True)
