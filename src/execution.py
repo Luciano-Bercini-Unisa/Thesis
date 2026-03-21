@@ -56,7 +56,7 @@ def build_manual_device_map(model_name):
     cfg = AutoConfig.from_pretrained(model_name)
     n_layers = cfg.num_hidden_layers
 
-    split = n_layers // 2
+    split = int(n_layers * 0.4)
     device_map = {}
 
     device_map["model.embed_tokens"] = 0
