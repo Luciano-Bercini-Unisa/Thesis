@@ -55,6 +55,9 @@ def strip_solidity_comments(src: str) -> str:
 
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    tok.padding_side = "left"
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE, device_map="auto"
     ).eval())
@@ -96,7 +99,9 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         do_sample=False,
         temperature=temperature,
         top_p=top_p,
-        use_cache=True
+        use_cache=True,
+        pad_token_id=tokenizer.pad_token_id,
+        eos_token_id=tokenizer.eos_token_id,
     )
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
