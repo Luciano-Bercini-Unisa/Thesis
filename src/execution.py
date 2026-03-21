@@ -114,8 +114,9 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
 
         print("logits has_nan:", torch.isnan(next_token_scores).any().item(), flush=True)
         print("logits has_inf:", torch.isinf(next_token_scores).any().item(), flush=True)
-        print("logits min:", next_token_scores.min().item(), flush=True)
-        print("logits max:", next_token_scores.max().item(), flush=True)
+        print(f"logits min: {next_token_scores.min().item():.12e}", flush=True)
+        print(f"logits max: {next_token_scores.max().item():.12e}", flush=True)
+        print(f"logits mean: {next_token_scores.mean().item():.12e}", flush=True)
 
         probs = torch.softmax(next_token_scores, dim=-1)
 
