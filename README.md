@@ -9,7 +9,7 @@
 3. pip install -r requirements.txt  
    Install all required dependencies.
 
-4. On Linux: pip install flash-attn --no-build-isolation
+4. On Linux (optional): pip install flash-attn --no-build-isolation
 
 # Running experiment.py
 

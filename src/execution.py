@@ -50,6 +50,7 @@ def strip_solidity_comments(src: str) -> str:
     # Converts multiple consecutive empty/whitespace-only lines into a single blank line (double newline).
     src = re.sub(r"\n\s*\n+", "\n\n", src)
     return src.strip()  # Removes leading and trailing whitespace.
+    return src.strip()  # Removes leading and trailing whitespace.
 
 
 def load_model(model_name):
