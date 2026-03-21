@@ -30,8 +30,8 @@ from prompts import (
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "1024"))
 SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "128"))
-TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
-TOP_P = float(os.getenv("TOP_P", "0.95"))
+TEMPERATURE = float(os.getenv("TEMPERATURE", "0.5"))
+TOP_P = float(os.getenv("TOP_P", "0.5"))
 
 PROMPT_TEMPLATES = {
     "ZS": ZS,
