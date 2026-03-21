@@ -16,7 +16,7 @@ import re
 import argparse
 from pathlib import Path
 from codecarbon import EmissionsTracker
-from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig, AutoConfig
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -52,19 +52,35 @@ def strip_solidity_comments(src: str) -> str:
     return src.strip()  # Removes leading and trailing whitespace.
 
 
+def build_manual_device_map(model_name):
+    cfg = AutoConfig.from_pretrained(model_name)
+    n_layers = cfg.num_hidden_layers
+
+    split = n_layers // 2
+    device_map = {}
+
+    device_map["model.embed_tokens"] = 0
+
+    for i in range(n_layers):
+        device_map[f"model.layers.{i}"] = 0 if i < split else 1
+
+    device_map["model.norm"] = 1
+    device_map["lm_head"] = 1
+
+    return device_map
+
+
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
 
-    max_memory = {
-        0: "12GiB",
-        1: "12GiB",
-    }
+    device_map = build_manual_device_map(model_name)
+    print("manual device_map:", device_map)
 
     mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map="auto", max_memory=max_memory,
+        model_name, dtype=DTYPE, device_map=device_map
     ).eval())
     mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
     print(mdl.generation_config)
