@@ -9,14 +9,14 @@
 
 import os
 
-#os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
+os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
 import json
 import re
 import argparse
 from pathlib import Path
 from codecarbon import EmissionsTracker
-from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig, AutoConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -27,7 +27,7 @@ from prompts import (
 )
 
 # If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
-DTYPE = torch.float32 if torch.cuda.is_available() else torch.float32
+DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "1024"))
 SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "128"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
@@ -52,35 +52,13 @@ def strip_solidity_comments(src: str) -> str:
     return src.strip()  # Removes leading and trailing whitespace.
 
 
-def build_manual_device_map(model_name):
-    cfg = AutoConfig.from_pretrained(model_name)
-    n_layers = cfg.num_hidden_layers
-
-    split = int(n_layers * 0.4)
-    device_map = {}
-
-    device_map["model.embed_tokens"] = 0
-
-    for i in range(n_layers):
-        device_map[f"model.layers.{i}"] = 0 if i < split else 1
-
-    device_map["model.norm"] = 1
-    device_map["lm_head"] = 1
-
-    return device_map
-
-
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
-
-    device_map = build_manual_device_map(model_name)
-    print("manual device_map:", device_map)
-
     mdl = (AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE, device_map=device_map
+        model_name, dtype=DTYPE, device_map="auto"
     ).eval())
     mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
     print(mdl.generation_config)
