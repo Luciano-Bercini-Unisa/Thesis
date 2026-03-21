@@ -9,6 +9,8 @@
 
 import os
 
+from accelerate import infer_auto_device_map
+
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
 import json
@@ -57,13 +59,17 @@ def load_model(model_name):
     if tok.pad_token is None:
         tok.pad_token = tok.eos_token
     tok.padding_side = "left"
+    mdl = AutoModelForCausalLM.from_pretrained(
+        model_name, dtype=DTYPE,
+        #device_map="auto",
+        #device_map={"": 1}
+    )
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
-        device_map="auto",
+        #device_map="auto",
+        device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
-    mdl.generation_config = GenerationConfig.from_model_config(mdl.config)
-    print(mdl.generation_config)
     return tok, mdl
 
 
