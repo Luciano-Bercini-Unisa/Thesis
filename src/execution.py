@@ -95,8 +95,8 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     gen_kwargs = dict(
         **input_tensors,
         max_new_tokens=max_new_tokens,
-        #do_sample=(temperature > 0),
-        do_sample=False,
+        do_sample=(temperature > 0),
+        #do_sample=False,
         temperature=temperature,
         top_p=top_p,
         use_cache=True,
