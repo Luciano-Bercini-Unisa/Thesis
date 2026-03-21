@@ -106,6 +106,12 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
+        outputs = mod(**input_tensors)
+        logits = outputs.logits[:, -1, :]
+        print("has_nan:", torch.isnan(logits).any().item())
+        print("has_inf:", torch.isinf(logits).any().item())
+        print("min:", logits.min().item())
+        print("max:", logits.max().item())
         # Offloaded to save memory (as it goes into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         # if mod.device.type == "cuda":
