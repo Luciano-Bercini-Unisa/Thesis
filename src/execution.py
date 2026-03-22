@@ -57,11 +57,10 @@ def load_model(model_name):
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
         device_map="auto",
-        attn_implementation="sdpa",
+        trust_remote_code=True,
         #device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
-    print(mdl.hf_device_map)
     return tok, mdl
 
 
