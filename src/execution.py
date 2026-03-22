@@ -8,7 +8,6 @@
 # The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
-
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
 import json
@@ -103,25 +102,15 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
-        outputs = mod(**input_tensors, use_cache=True)
-        next_token_scores = outputs.logits[:, -1, :]
+        # outputs = mod(**input_tensors, use_cache=True)
+        # next_token_scores = outputs.logits[:, -1, :]
+        # print("logits has_nan:", torch.isnan(next_token_scores).any().item(), flush=True)
+        # print("logits has_inf:", torch.isinf(next_token_scores).any().item(), flush=True)
+        # print(f"logits min: {next_token_scores.min().item():.12e}", flush=True)
+        # print(f"logits max: {next_token_scores.max().item():.12e}", flush=True)
+        # print(f"logits mean: {next_token_scores.mean().item():.12e}", flush=True)
+        # probs = torch.softmax(next_token_scores, dim=-1)
 
-        print("logits has_nan:", torch.isnan(next_token_scores).any().item(), flush=True)
-        print("logits has_inf:", torch.isinf(next_token_scores).any().item(), flush=True)
-        print(f"logits min: {next_token_scores.min().item():.12e}", flush=True)
-        print(f"logits max: {next_token_scores.max().item():.12e}", flush=True)
-        print(f"logits mean: {next_token_scores.mean().item():.12e}", flush=True)
-
-        probs = torch.softmax(next_token_scores, dim=-1)
-
-        print("probs has_nan:", torch.isnan(probs).any().item(), flush=True)
-        print("probs has_inf:", torch.isinf(probs).any().item(), flush=True)
-        print("probs min:", probs.min().item(), flush=True)
-        print("probs max:", probs.max().item(), flush=True)
-        print("probs sum:", probs.sum(dim=-1), flush=True)
-
-        next_token = torch.multinomial(probs, num_samples=1)
-        print("sampled ok:", next_token.item(), flush=True)
         # Offloaded to save memory (as it goes into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         # if mod.device.type == "cuda":
@@ -129,7 +118,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
-    gen_ids = out[0][in_len:]  # Decore only the answer, not the full prompt.
+    gen_ids = out[0][in_len:]  # Decode only the answer, not the full prompt.
     output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
     return in_len, out_len, dt, output_text
@@ -149,9 +138,9 @@ def run_sanity_inference(tokenizer, mod, user_prompt: str):
     gen_kwargs = dict(
         **input_tensors,
         max_new_tokens=max_new_tokens,
-        do_sample=False,
-        temperature=0.0,
-        top_p=1.0,
+        do_sample=True,
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
         use_cache=True
     )
     t0 = time.time()
@@ -371,6 +360,7 @@ def main():
             # That’s fine for the moment if your priority is wiring the semantics.
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
+            print(f"Vulnerability Detection: {file_name}... ")
             vd_tracker.start()
             vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
                                                             max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
@@ -383,6 +373,7 @@ def main():
                 torch.cuda.empty_cache()
             # --- Semantic analysis step (second prompt) ---
             sa_prompt = get_prompt(sa_template, vd_reply)
+            print(f"Semantic Analysis: {file_name}... ")
             sa_tracker.start()
             sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
                 tokenizer,
