@@ -56,8 +56,7 @@ def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
-        device_map="auto",
-        trust_remote_code=True,
+        device_map="auto"
         #device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
