@@ -9,8 +9,6 @@
 
 import os
 
-from accelerate import infer_auto_device_map
-
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv, os, pathlib
 import json
@@ -18,7 +16,7 @@ import re
 import argparse
 from pathlib import Path
 from codecarbon import EmissionsTracker
-from transformers import AutoTokenizer, AutoModelForCausalLM, GenerationConfig
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
@@ -56,18 +54,11 @@ def strip_solidity_comments(src: str) -> str:
 
 def load_model(model_name):
     tok = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
-    tok.padding_side = "left"
-    mdl = AutoModelForCausalLM.from_pretrained(
-        model_name, dtype=DTYPE,
-        #device_map="auto",
-        #device_map={"": 1}
-    )
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
-        #device_map="auto",
-        device_map=infer_auto_device_map(mdl)
+        device_map="auto",
+        attn_implementation="eager",
+        #device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
     return tok, mdl
@@ -105,14 +96,9 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         **input_tensors,
         max_new_tokens=max_new_tokens,
         do_sample=(temperature > 0),
-        #do_sample=False,
         temperature=temperature,
         top_p=top_p,
-        use_cache=True,
-        pad_token_id=tokenizer.pad_token_id,
-        eos_token_id=tokenizer.eos_token_id,
-        renormalize_logits=True,
-        remove_invalid_values=True,
+        use_cache=True
     )
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
