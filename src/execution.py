@@ -57,7 +57,7 @@ def load_model(model_name):
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
         device_map="auto",
-        attn_implementation="eager",
+        attn_implementation="sdpa",
         #device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
