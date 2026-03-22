@@ -61,6 +61,7 @@ def load_model(model_name):
         #device_map=infer_auto_device_map(mdl)
         #device_map={"": 1}
     ).eval())
+    print(mdl.hf_device_map)
     return tok, mdl
 
 
