@@ -71,18 +71,31 @@ def get_prompt(prompt_template: str, code: str) -> str:
 def run_one_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p):
     if supports_chat(tokenizer):
         return run_chat_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p)
-    else:
+    else: # Fallback to plain text generation when the model doesn’t support a chat format.
         return run_sanity_inference(tokenizer, mod, user_prompt, max_new_tokens, temperature, top_p)
 
 
 def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str, max_new_tokens, temperature, top_p):
+    input_tensors = tokenize_chat_input(tokenizer, mod, system_prompt, user_prompt)
+    return generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperature, top_p)
+
+
+def run_sanity_inference(tokenizer, mod, user_prompt: str, max_new_tokens, temperature, top_p):
+    model_ctx = getattr(mod.config, "n_ctx", None) or getattr(mod.config, "max_position_embeddings", 1024)
+    safety = 8
+    max_input_tokens = min(256, model_ctx - max_new_tokens - safety)
+    input_tensors = tokenize_plain_input(tokenizer, mod, user_prompt, max_input_tokens)
+    return generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperature, top_p)
+
+
+def tokenize_chat_input(tokenizer, mod, system_prompt: str | None, user_prompt: str):
     msgs = []
-    # System prompt = the instruction that defines the model’s role or behavior. Could be missing.
+    # System prompt: the instruction that defines the model’s role or behavior. Could be missing.
     if system_prompt:
         msgs.append({"role": "system", "content": system_prompt})
     msgs.append({"role": "user", "content": user_prompt})
     # Get the token ids and the attention mask.
-    input_tensors = tokenizer.apply_chat_template(
+    return tokenizer.apply_chat_template(
         msgs,
         add_generation_prompt=True,
         tokenize=True,
@@ -90,15 +103,29 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         return_tensors="pt",
         padding=True
     ).to(mod.device)
+
+
+def tokenize_plain_input(tokenizer, mod, user_prompt: str, max_input_tokens: int):
+    return tokenizer(
+        user_prompt,
+        truncation=True,
+        max_length=max_input_tokens,
+        return_tensors="pt"
+    ).to(mod.device)
+
+
+def generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperature, top_p):
     # Generation settings. Sampling only if temperature > 0 (not all models support temperature).
+    do_sample = temperature > 0
     gen_kwargs = dict(
         **input_tensors,
         max_new_tokens=max_new_tokens,
-        do_sample=(temperature > 0),
-        temperature=temperature,
-        top_p=top_p,
+        do_sample=do_sample,
         use_cache=True
     )
+    if do_sample:
+        gen_kwargs["temperature"] = temperature
+        gen_kwargs["top_p"] = top_p
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
@@ -114,40 +141,12 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
         # Offloaded to save memory (as it goes into OOM).
         # Check: https://huggingface.co/docs/transformers/en/kv_cache
         # if mod.device.type == "cuda":
-            # gen_kwargs["cache_implementation"] = "offloaded"
+        # gen_kwargs["cache_implementation"] = "offloaded"
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
-    in_len = input_tensors["input_ids"].shape[-1]
-    gen_ids = out[0][in_len:]  # Decode only the answer, not the full prompt.
-    output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
-    out_len = out[0].shape[-1] - in_len
-    return in_len, out_len, dt, output_text
 
-
-def run_sanity_inference(tokenizer, mod, user_prompt: str, max_new_tokens, temperature, top_p):
-    model_ctx = getattr(mod.config, "n_ctx", None) or getattr(mod.config, "max_position_embeddings", 1024)
-    safety = 8
-    max_input_tokens = min(256, model_ctx - max_new_tokens - safety)
-    input_tensors = tokenizer(
-        user_prompt,
-        truncation=True,
-        max_length=max_input_tokens,
-        return_tensors="pt"
-    ).to(mod.device)
-    gen_kwargs = dict(
-        **input_tensors,
-        max_new_tokens=max_new_tokens,
-        do_sample=(temperature > 0),
-        temperature=temperature,
-        top_p=top_p,
-        use_cache=True
-    )
-    t0 = time.time()
-    with torch.no_grad():
-        out = mod.generate(**gen_kwargs)
-    dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
-    gen_ids = out[0][in_len:]
+    gen_ids = out[0][in_len:] # Decode only the answer, not the full prompt.
     output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
     return in_len, out_len, dt, output_text
