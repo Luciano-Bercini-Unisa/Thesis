@@ -126,6 +126,10 @@ def generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperat
     if do_sample:
         gen_kwargs["temperature"] = temperature
         gen_kwargs["top_p"] = top_p
+    else:
+        gen_kwargs["temperature"] = None
+        gen_kwargs["top_p"] = None
+        gen_kwargs["top_k"] = None
     # Run generation without the grad, measure latency seconds.
     t0 = time.time()
     with torch.inference_mode():
