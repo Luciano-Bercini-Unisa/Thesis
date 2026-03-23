@@ -9,7 +9,7 @@
 
 import os
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
-import torch, time, csv, os, pathlib
+import torch, time, csv
 import json
 import re
 import argparse
@@ -27,7 +27,7 @@ from prompts import (
 
 # If GPU CUDA is available, then use bfloat16 (b stands for Brain in Google Brain), otherwise use float32.
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
-VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "1024"))
+VD_MAX_NEW_TOKENS = int(os.getenv("VD_MAX_NEW_TOKENS", "2048"))
 SA_MAX_NEW_TOKENS = int(os.getenv("SA_MAX_NEW_TOKENS", "128"))
 TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "1"))
@@ -72,7 +72,7 @@ def run_one_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens
     if supports_chat(tokenizer):
         return run_chat_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p)
     else:
-        return run_sanity_inference(tokenizer, mod, user_prompt)
+        return run_sanity_inference(tokenizer, mod, user_prompt, max_new_tokens, temperature, top_p)
 
 
 def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: str, max_new_tokens, temperature, top_p):
@@ -124,9 +124,8 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
     return in_len, out_len, dt, output_text
 
 
-def run_sanity_inference(tokenizer, mod, user_prompt: str):
+def run_sanity_inference(tokenizer, mod, user_prompt: str, max_new_tokens, temperature, top_p):
     model_ctx = getattr(mod.config, "n_ctx", None) or getattr(mod.config, "max_position_embeddings", 1024)
-    max_new_tokens = 16
     safety = 8
     max_input_tokens = min(256, model_ctx - max_new_tokens - safety)
     input_tensors = tokenizer(
@@ -138,9 +137,9 @@ def run_sanity_inference(tokenizer, mod, user_prompt: str):
     gen_kwargs = dict(
         **input_tensors,
         max_new_tokens=max_new_tokens,
-        do_sample=True,
-        temperature=TEMPERATURE,
-        top_p=TOP_P,
+        do_sample=(temperature > 0),
+        temperature=temperature,
+        top_p=top_p,
         use_cache=True
     )
     t0 = time.time()
@@ -148,8 +147,9 @@ def run_sanity_inference(tokenizer, mod, user_prompt: str):
         out = mod.generate(**gen_kwargs)
     dt = time.time() - t0
     in_len = input_tensors["input_ids"].shape[-1]
+    gen_ids = out[0][in_len:]
+    output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
-    output_text = tokenizer.decode(out[0], skip_special_tokens=True)
     return in_len, out_len, dt, output_text
 
 
@@ -248,8 +248,15 @@ def parse_sa_output(sa_text: str):
     return prediction_map
 
 
-# ---------- main ----------
-def main():
+def format_peak_cuda_mem():
+    if not torch.cuda.is_available():
+        return ""
+    peak_alloc_gb = torch.cuda.max_memory_allocated() / 1024**3
+    peak_reserved_gb = torch.cuda.max_memory_reserved() / 1024**3
+    return f", peak_alloc={peak_alloc_gb:.2f} GB, peak_reserved={peak_reserved_gb:.2f} GB"
+
+
+def parse_args():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root.")
@@ -258,15 +265,12 @@ def main():
     ap.add_argument("--strip_comments", action="store_true", default=True, dest="strip_comments")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
-    args = ap.parse_args()
-    # The model name uses "/" which would create a subfolder and hence it's replaced by "_".
-    safe_model_name = args.model.replace("/", "__")
+    return ap.parse_args()
 
-    # Derive effective prompt key (explicitly encode persona)
-    if args.persona:
-        effective_prompt = f"{args.prompt}_PERSONA"
-    else:
-        effective_prompt = args.prompt
+
+def prepare_run_paths(model_name: str, effective_prompt: str):
+    # The model name uses "/", which would create a subfolder and hence it's replaced by "_".
+    safe_model_name = model_name.replace("/", "__")
     base_dir = Path("results") / safe_model_name / effective_prompt
     base_dir.mkdir(parents=True, exist_ok=True)
 
@@ -275,16 +279,40 @@ def main():
 
     csv_path = base_dir / f"{run_tag}.csv"
     json_path = base_dir / f"{run_tag}.json"
+    # Dedicated directory for CodeCarbon tracker for this model.
+    out_dir = base_dir / ".codecarbon"
+    out_dir.mkdir(exist_ok=True)
 
+    return safe_model_name, csv_path, json_path, out_dir
+
+
+def create_tracker(out_dir, safe_model_name: str, experiment_id: str):
+    return EmissionsTracker(
+        measure_power_secs=10,
+        output_dir=str(out_dir),
+        save_to_file=True,
+        project_name=safe_model_name,
+        experiment_id=experiment_id,
+        log_level="error"
+    )
+
+
+# ---------- main ----------
+def main():
+    args = parse_args()
+    # Derive an effective prompt key (explicitly encode persona).
+    if args.persona:
+        effective_prompt = f"{args.prompt}_PERSONA"
+    else:
+        effective_prompt = args.prompt
+
+    safe_model_name, csv_path, json_path, out_dir = prepare_run_paths(args.model, effective_prompt)
     print(f"\nLoading model: {args.model}")
     tokenizer, model = load_model(args.model)
     # Warm-up to stabilize clock/caching.
     print("Running warm-up inference...")
     _ = run_one_inference(tokenizer, model, None, "Warm up.",
                           max_new_tokens=16, temperature=TEMPERATURE, top_p=TOP_P)
-    # Dedicated directory for CodeCarbon tracker for this model.
-    out_dir = base_dir / ".codecarbon"
-    out_dir.mkdir(exist_ok=True)
     # CSV.
     file_output = open(csv_path, "w", newline="", encoding="utf-8")
     writer = csv.writer(file_output)
@@ -300,7 +328,7 @@ def main():
         "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
     ])
     processed = set()
-    if args.resume_json and pathlib.Path(args.resume_json).exists():
+    if args.resume_json and Path(args.resume_json).exists():
         with open(args.resume_json, encoding="utf-8") as f:
             try:
                 prev = json.load(f)
@@ -336,25 +364,11 @@ def main():
             # Constant overhead (marginal).
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                torch.cuda.reset_peak_memory_stats()
 
             # Per-inference Tracking.
-            vd_tracker = EmissionsTracker(
-                measure_power_secs=10,
-                output_dir=out_dir,
-                save_to_file=True,
-                project_name=safe_model_name,
-                experiment_id=f"{cat_key}/{file_name}",
-                log_level="error"
-            )
-
-            sa_tracker = EmissionsTracker(
-                measure_power_secs=10,
-                output_dir=out_dir,
-                save_to_file=True,
-                project_name=safe_model_name,
-                experiment_id=f"SA_{cat_key}/{file_name}",
-                log_level="error"
-            )
+            vd_tracker = create_tracker(out_dir, safe_model_name, f"vd_{cat_key}/{file_name}")
+            sa_tracker = create_tracker(out_dir, safe_model_name, f"sa_{cat_key}/{file_name}")
 
             # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
             # That’s fine for the moment if your priority is wiring the semantics.
@@ -366,6 +380,9 @@ def main():
                                                             max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
                                                             top_p=TOP_P)
             vd_emissions_kg = vd_tracker.stop()  # Per-inference kg CO2e.
+            print(f"Completed detection for {file_name} "
+                f"(in={vd_in_t}, out={vd_out_t}, time={vd_secs:.2f}s{format_peak_cuda_mem()})"
+            )
             # Read energy_kwh for the last appended row.
             vd_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
             # Helps with OOM errors.
