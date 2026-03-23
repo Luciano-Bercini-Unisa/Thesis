@@ -2,11 +2,11 @@
 torch
 torchvision
 accelerate
+transformers
 codecarbon==3.0.9
 matplotlib==3.10.7
-numpy==1.26.4
+numpy
 seaborn==0.13.2
-transformers==4.57.1
 hf_xet # Faster downloads of the models.
 optimum
 bitsandbytes
