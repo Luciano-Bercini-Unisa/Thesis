@@ -78,16 +78,16 @@ deepseek-ai/deepseek-coder-33b-instruct  Large LLM
 # Example runs
 
 ## Zero-shot
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --runs 5
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS --runs 5
 
 ## Zero-shot + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS --persona --runs 5
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS --persona --runs 5
 
 ## Zero-shot + CoT + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt ZS_COT --persona --runs 5
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS_COT --persona --runs 5
 
 ## Few-shot
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned --prompt FS --runs 5
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt FS --runs 5
 
 
 # Running evaluation.py
@@ -105,7 +105,7 @@ This script performs the evaluation phase only and should be run after execution
 --prompt PROMPT_KEY  
 
 PROMPT_KEY must match the effective prompt key used during execution
-(e.g. ZS, ZS_PERSONA, ZS_PERSONA_COT).
+(e.g., ZS, ZS_PERSONA, ZS_PERSONA_COT).
 
 ## Example
 python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_PERSONA_COT
