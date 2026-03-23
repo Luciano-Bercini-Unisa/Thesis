@@ -374,7 +374,7 @@ def main():
             # That’s fine for the moment if your priority is wiring the semantics.
             # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
             # to after run_semantic_analysis so it wraps both calls.
-            print(f"Analyzing file: {file_name}")
+            print(f"Executing detection for {file_name}")
             vd_tracker.start()
             vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
                                                             max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
