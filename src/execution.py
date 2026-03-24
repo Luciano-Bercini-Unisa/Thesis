@@ -340,7 +340,7 @@ def main():
                 processed = set()
     tpl = PROMPT_TEMPLATES[args.prompt]
     sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
-    if args.persona:
+    if args.role:
         sys_p = ROLE_VD.strip()
     else:
         sys_p = None
