@@ -264,7 +264,7 @@ def parse_args():
     ap.add_argument("--model", default="microsoft/Phi-3.5-mini-instruct")
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root.")
     ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
-    ap.add_argument("--persona", action="store_true", help="Enable VD persona via system prompt.")
+    ap.add_argument("--role", action="store_true", help="Enable VD role pattern via system prompt.")
     ap.add_argument("--strip_comments", action="store_true", default=True, dest="strip_comments")
     ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
@@ -303,9 +303,9 @@ def create_tracker(out_dir, safe_model_name: str, experiment_id: str):
 # ---------- main ----------
 def main():
     args = parse_args()
-    # Derive an effective prompt key (explicitly encode persona).
-    if args.persona:
-        effective_prompt = f"{args.prompt}_PERSONA"
+    # Derive an effective prompt key (explicitly encode role).
+    if args.role:
+        effective_prompt = f"{args.prompt}_ROLE"
     else:
         effective_prompt = args.prompt
 

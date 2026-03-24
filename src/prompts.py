@@ -5,7 +5,13 @@
 ROLE_VD = "You are a vulnerability detector for a smart contract. "
 ROLE_SA = "You are a semantic analyzer of text. "
 
-COT = "Reason carefully and base each conclusion on the contract code. "
+COT = """
+For each vulnerability:
+1. Find relevant code evidence.
+2. Decide whether the evidence really matches the vulnerability definition.
+3. Conclude with Present, Absent, or Uncertain.
+Use only the provided code.
+"""
 
 VULNS = """
 ID: Access Control
@@ -155,13 +161,14 @@ Output: If the external call is used to send ether to a smart contract that does
 VD_SUFFIX = """
 Analyze the smart contract for the nine vulnerabilities listed above.
 
-For each vulnerability:
-- Output exactly one line in the format:
-  <ID>: Present | Absent | Uncertain
-- Then provide a brief explanation.
+For each vulnerability, output exactly in this format:
+
+<ID>: Present | Absent | Uncertain
+Explanation: <brief explanation>
 
 Rules:
 - Use the exact ID strings provided.
+- Follow the exact order shown above.
 - Do not skip any vulnerability.
 - Base conclusions strictly on the code.
 - Be conservative: if unsure, use "Uncertain".
@@ -209,21 +216,8 @@ INPUT = "\nThe input is:\n{input}"
 ################################################ PROMPTS ################################################
 SA = TASK_SA + INPUT
 
-# PERSONA variants are given through execution flags.
+# PERSONA variants for VD are given through execution flags (for SA it's always enabled).
 ZS = TASK_VD + INPUT
 ZS_COT = TASK_VD + COT + INPUT
 FS = TASK_VD_FEW_SHOT + INPUT
-
-
-# Original vulnerability descriptions. We now use the structured descriptions.
-# ORIGINAL_VULNS = """
-# First, Reentrancy, also known as or related to race to empty, recursive call vulnerability, call to the unknown.
-# Second, Access Control.
-# Third, Arithmetic Issues, also known as integer overflow and integer underflow.
-# Fourth, Unchecked Return Values For Low Level Calls, also known as or related to silent failing sends, unchecked-send.
-# Fifth, Denial of Service, including gas limit reached, unexpected throw, unexpected kill, access control breached.
-# Sixth, Bad Randomness, also known as nothing is secret.
-# Seventh, Front-Running, also known as time-of-check vs time-of-use (TOCTOU), race condition, transaction ordering dependence (TOD).
-# Eighth, Time manipulation, also known as timestamp dependence.
-# Nineth, Short Address Attack, also known as or related to off-chain issues, client vulnerabilities.
-# """
+FS_COT = TASK_VD_FEW_SHOT + COT + INPUT

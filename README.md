@@ -43,15 +43,15 @@ results/<model_name>/<prompt_key>/
 
 Examples:
 results/Qwen__Qwen2.5-1.5B-Instruct/ZS/
-results/Qwen__Qwen2.5-1.5B-Instruct/ZS_PERSONA/
-results/Qwen__Qwen2.5-1.5B-Instruct/ZS_PERSONA_COT/
+results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE/
+results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE_COT/
 
 ## Flags (execution phase)
 
 --model MODEL_NAME        (default: microsoft/Phi-3.5-mini-instruct)
 --dataset PATH            (required) Path to SmartBugs-Curated root
 --prompt KEY              (required) One of: ZS, ZS_COT, FS
---persona                 Enable persona via system prompt
+--role                    Enable role pattern via system prompt
 --strip_comments          Strip Solidity comments (enabled by default)
 --resume_json FILE        Resume a previous run and skip processed files
 --sa_prompt SA_KEY        Semantic analysis prompt (default: SA)
@@ -62,11 +62,11 @@ ZS       Zero-shot
 ZS_COT   Zero-shot + Chain-of-Thought  
 FS       Few-shot  
 
-When --persona is enabled, the effective prompt key is automatically suffixed with _PERSONA:
-ZS_PERSONA  
-ZS_PERSONA_COT
+When --role is enabled, the effective prompt key is automatically suffixed with _ROLE:
+ZS_ROLE
+ZS_ROLE_COT
 
-Persona conditioning is applied exclusively via the system prompt.
+Role conditioning is applied exclusively via the system prompt.
 
 ## Example models
 
@@ -80,11 +80,11 @@ deepseek-ai/deepseek-coder-33b-instruct  Large LLM
 ## Zero-shot
 python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS --runs 5
 
-## Zero-shot + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS --persona --runs 5
+## Zero-shot + Role
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS --role --runs 5
 
-## Zero-shot + CoT + Persona
-python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS_COT --persona --runs 5
+## Zero-shot + CoT + Role
+python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt ZS_COT --role --runs 5
 
 ## Few-shot
 python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt FS --runs 5
@@ -105,14 +105,14 @@ This script performs the evaluation phase only and should be run after execution
 --prompt PROMPT_KEY  
 
 PROMPT_KEY must match the effective prompt key used during execution
-(e.g., ZS, ZS_PERSONA, ZS_PERSONA_COT).
+(e.g., ZS, ZS_ROLE, ZS_ROLE_COT).
 
 ## Example
-python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_PERSONA_COT
+python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_ROLE_COT
 
 ## Notes on reproducibility
 
-- Persona conditioning is controlled exclusively via the --persona flag.
+- Role conditioning is controlled exclusively via the --role flag.
 - Prompt keys explicitly encode the experimental condition.
 - Each configuration is stored in a separate results folder, preventing accidental mixing of runs.
 - The pipeline is fully deterministic except for model sampling, which is mitigated by repeated runs.
@@ -125,7 +125,7 @@ performing LLM inference again.
 
 ## Running evaluation.py
 
-python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_PERSONA_COT
+python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_ROLE_COT
 
 ## Running aggregation.py
 
