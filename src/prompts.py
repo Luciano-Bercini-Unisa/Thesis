@@ -5,23 +5,10 @@
 ROLE_VD = "You are a vulnerability detector for a smart contract. "
 ROLE_SA = "You are a semantic analyzer of text. "
 
-COT = "Think step by step, carefully. "
+COT = "Reason carefully and base each conclusion on the contract code. "
 
-# Add vulnerability descriptions from the paper.
+
 VULNS = """
-First, Reentrancy, also known as or related to race to empty, recursive call vulnerability, call to the unknown. 
-Second, Access Control. 
-Third, Arithmetic Issues, also known as integer overflow and integer underflow. 
-Fourth, Unchecked Return Values For Low Level Calls, also known as or related to silent failing sends, unchecked-send. 
-Fifth, Denial of Service, including gas limit reached, unexpected throw, unexpected kill, access control breached. 
-Sixth, Bad Randomness, also known as nothing is secret. 
-Seventh, Front-Running, also known as time-of-check vs time-of-use (TOCTOU), race condition, transaction ordering dependence (TOD). 
-Eighth, Time manipulation, also known as timestamp dependence. 
-Nineth, Short Address Attack, also known as or related to off-chain issues, client vulnerabilities. 
-"""
-
-
-STRUCTURED_VULNS = """
 ID: Access Control
 Description: Improper restriction of function access, allowing unauthorized users to execute critical functions.
          
@@ -305,22 +292,62 @@ function withdraw(uint256 _amount) public {
 Output: If the external call is used to send ether to a smart contract that does not accept them (e.g. because it does not have a payable fallback function), the EVM will replace its return value with false. Since the return value is not checked in our example, the function's changes to the contract state will not be reverted, and the etherLeft variable will end up tracking an incorrect value. Verdict, Unchecked Low Level Calls: 1 """
 
 
-TASK_STRUCTURED_VD = "Here are nine common vulnerabilities: " + STRUCTURED_VULNS + "\nCheck the following smart contract for the above vulnerabilities. "
 TASK_VD = "Here are nine common vulnerabilities: " + VULNS + "\nCheck the following smart contract for the above vulnerabilities. "
 
 TASK_VD_FEW_SHOT = "Here are nine common vulnerabilities: " + FEW_SHOT + "\nCheck the following smart contract for the above vulnerabilities. "
 TASK_VD_FEW_SHOT_WITH_EXPLANATION = "Here are nine common vulnerabilities: " + FEW_SHOT_WITH_EXPLANATION + "\nCheck the following smart contract for the above vulnerabilities. "
 
-TASK_SA = "Here are nine common vulnerabilities. " + VULNS + "The following text is a vulnerability detection result for a smart contract. Use 0 or 1 to indicate whether there are specific types of vulnerabilities. No explanations or extra text. For example: “Reentrancy: 1”. "
-TASK_STRUCTURED_SA = "Here are nine common vulnerabilities: " + STRUCTURED_VULNS + "The following text is a vulnerability detection result for a smart contract. Use 0 or 1 to indicate whether there are specific types of vulnerabilities. No explanations or extra text. For example: “Reentrancy: 1”. "
+
+TASK_SA = """
+Here are nine common vulnerabilities:
+""" + VULNS + """
+
+The following text is a vulnerability detection result for a smart contract.
+
+Convert it into a complete binary classification.
+
+Rules:
+- Output exactly nine lines, one for each vulnerability ID above.
+- Use the exact IDs and the exact order shown below.
+- Each line must be in the format: <ID>: <0 or 1>
+- Use 1 only if the text clearly claims or strongly implies that the vulnerability is present.
+- Use 0 if the text says it is absent, does not mention it, or is uncertain.
+- If the text is ambiguous, prefer 0.
+- Do not add explanations or extra text.
+
+Output format:
+Access Control: 0
+Arithmetic: 0
+Bad Randomness: 0
+Denial Of Service: 0
+Front Running: 0
+Reentrancy: 0
+Short Addresses: 0
+Time Manipulation: 0
+Unchecked Low Level Calls: 0
+"""
 
 INPUT = "\nThe input is:\n{input}."
 
 ################################################ PROMPTS ################################################
 # ORIGINAL_PROMPT_SA = ROLE_SA + TASK_SA + COT + INPUT
-SA = TASK_STRUCTURED_SA + COT + INPUT
+SA = TASK_SA + INPUT
 
 # PERSONA variants are given through execution flags.
-ZS = TASK_STRUCTURED_VD + INPUT
-ZS_COT = TASK_STRUCTURED_VD + COT + INPUT
+ZS = TASK_VD + INPUT
+ZS_COT = TASK_VD + COT + INPUT
 FS = TASK_VD_FEW_SHOT + INPUT
+
+
+# Original vulnerability descriptions. We now use the structured descriptions.
+# ORIGINAL_VULNS = """
+# First, Reentrancy, also known as or related to race to empty, recursive call vulnerability, call to the unknown.
+# Second, Access Control.
+# Third, Arithmetic Issues, also known as integer overflow and integer underflow.
+# Fourth, Unchecked Return Values For Low Level Calls, also known as or related to silent failing sends, unchecked-send.
+# Fifth, Denial of Service, including gas limit reached, unexpected throw, unexpected kill, access control breached.
+# Sixth, Bad Randomness, also known as nothing is secret.
+# Seventh, Front-Running, also known as time-of-check vs time-of-use (TOCTOU), race condition, transaction ordering dependence (TOD).
+# Eighth, Time manipulation, also known as timestamp dependence.
+# Nineth, Short Address Attack, also known as or related to off-chain issues, client vulnerabilities.
+# """
