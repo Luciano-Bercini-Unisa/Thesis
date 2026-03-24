@@ -251,12 +251,12 @@ def parse_sa_output(sa_text: str):
     return prediction_map
 
 
-def format_peak_cuda_mem():
-    if not torch.cuda.is_available():
-        return ""
-    peak_alloc_gb = torch.cuda.max_memory_allocated() / 1024**3
-    peak_reserved_gb = torch.cuda.max_memory_reserved() / 1024**3
-    return f", peak_alloc={peak_alloc_gb:.2f} GB, peak_reserved={peak_reserved_gb:.2f} GB"
+# def format_peak_cuda_mem():
+#     if not torch.cuda.is_available():
+#         return ""
+#     peak_alloc_gb = torch.cuda.max_memory_allocated() / 1024**3
+#     peak_reserved_gb = torch.cuda.max_memory_reserved() / 1024**3
+#     return f", peak_alloc={peak_alloc_gb:.2f} GB, peak_reserved={peak_reserved_gb:.2f} GB"
 
 
 def parse_args():
@@ -384,7 +384,7 @@ def main():
                                                             top_p=TOP_P)
             vd_emissions_kg = vd_tracker.stop()  # Per-inference kg CO2e.
             print(f"Completed detection for {file_name} "
-                f"(in={vd_in_t}, out={vd_out_t}, time={vd_secs:.2f}s{format_peak_cuda_mem()})"
+                f"(in={vd_in_t}, out={vd_out_t}, time={vd_secs:.2f}s)"
             )
             # Read energy_kwh for the last appended row.
             vd_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
