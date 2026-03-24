@@ -7,7 +7,6 @@ ROLE_SA = "You are a semantic analyzer of text. "
 
 COT = "Reason carefully and base each conclusion on the contract code. "
 
-
 VULNS = """
 ID: Access Control
 Description: Improper restriction of function access, allowing unauthorized users to execute critical functions.
@@ -34,24 +33,22 @@ ID: Time Manipulation
 Description: Dependence on block timestamps that miners can influence.
 
 ID: Unchecked Low Level Calls
-Description: Calls to low-level functions like 'call()' without checking return values, which can silently fail."""
+Description: Calls to low-level functions like 'call()' without checking return values, which can silently fail.
+"""
 
 
 FEW_SHOT = """
-ID: Access Control
-Description: Improper restriction of function access, allowing unauthorized users to execute critical functions.
-- Example
+- Example 1
 Input:
 ```
 function initContract() public {
 	owner = msg.sender;
 }
 ```
-Output: "Access Control: 1"
+Output: The contract's initialization function sets the caller as the owner but is not part of the constructor. It lacks access restrictions and does not track whether it has already been called. As a result, any user can invoke the function and assign ownership to themselves, potentially leading to unauthorized access to privileged functionality. Verdict, Access Control is present.
 
-ID: Arithmetic
-Description: Missing or incorrect integer overflow/underflow checks, leading to unexpected values.
-- Example
+
+- Example 2
 Input:
 ```
 function withdraw(uint _amount) {
@@ -60,11 +57,10 @@ function withdraw(uint _amount) {
 	balances[msg.sender] -= _amount;
 }
 ```
-Output: "Arithmetic: 1"
+Output: The function does not check for integer underflow, allowing you to withdraw an infinite amount of tokens. Verdict, Arithmetic is present.
 
-ID: Bad Randomness
-Description: Use of predictable values for randomness, which attackers can manipulate.
-- Example
+
+- Example 3
 Input:
 ```
 uint256 private seed;
@@ -76,11 +72,10 @@ function play() public payable {
 	}
 }
 ```
-Output: "Bad Randomness: 1"
+Output: A private seed is used in combination with an iteration number and the keccak256 hash function to determine if the caller wins. Even though the seed is private, it must have been set via a transaction at some point in time and thus is visible on the blockchain. Verdict, Bad Randomness is present.
 
-ID: Denial Of Service
-Description: Malicious actions that consume excessive gas or exploit fallback behavior to block contract functionality.
-- Example
+
+- Example 4
 Input:
 ```
 function becomePresident() payable {
@@ -90,11 +85,10 @@ function becomePresident() payable {
     price = price * 2;           
 }
 ```
-Output: "Denial Of Service: 1"
+Output: The function allows you to become the president if you publicly bribe the previous one. Unfortunately, if the previous president is a smart contract and causes reversion on payment, the transfer of power will fail and the malicious smart contract will remain president forever. Verdict, Denial Of Service is present.
 
-ID: Front Running
-Description: Exploiting transaction order to manipulate outcomes before others.
-- Example
+
+- Example 5
 Input:
 ```
 function solve(string memory solution) public {
@@ -105,12 +99,10 @@ function solve(string memory solution) public {
     require(sent, "Failed to send Ether");
 }
 ```
-Output: "Front Running: 1"
+Output: The function leaks the secret solution in the transaction data, allowing an attacker to front-run the original user by submitting the same solution with a higher gas fee, thereby stealing the Ether reward. Verdict, Front Running is present.
 
 
-ID: Reentrancy
-Description: Recursive calls into the same contract before the initial function completes, leading to unexpected state changes.
-- Example
+- Example 6
 Input:
 ```
 function withdraw(uint _amount) {
@@ -119,12 +111,10 @@ function withdraw(uint _amount) {
 	balances[msg.sender] -= _amount;
 }
 ```
-Output: "Reentrancy: 1"
+Output: The function is vulnerable to a reentrancy attack. When the low level call() function sends ether to the msg.sender address, it becomes vulnerable; if the address is a smart contract, the payment will trigger its fallback function with what's left of the transaction gas. Verdict, Reentrancy is present.
 
 
-ID: Short Addresses
-Description: Failure to validate input lengths, allowing crafted shorter inputs to corrupt parameters.
-- Example
+- Example 7
 Input:
 ```
 function transfer(address _to, uint256 _value) public {
@@ -134,12 +124,10 @@ function transfer(address _to, uint256 _value) public {
     emit Transfer(msg.sender, _to, _value);
 }
 ```
-Output: "Short Addresses: 1"
+Output: An attacker can exploit the contract by sending a transaction with a malformed 19-byte address instead of the standard 20 bytes. Because the contract reads a fixed 20-byte address, it mistakenly includes the first byte of the token amount as part of the address. This misalignment results in the contract interpreting a much larger token amount—up to 256 times more—than intended, enabling the attacker to steal excess tokens. Verdict, Short Addresses is present.
 
 
-ID: Time Manipulation
-Description: Dependence on block timestamps that miners can influence.
-- Example
+- Example 8
 Input:
 ```
 function play() public {
@@ -148,12 +136,10 @@ function play() public {
 	msg.sender.transfer(1500 ether);
 }
 ```
-Output: "Time Manipulation: 1"
+Output: The function only accepts calls that come after a specific date. Since miners can influence their block's timestamp (to a certain extent), they can attempt to mine a block containing their transaction with a block timestamp set in the future. If it is close enough, it will be accepted on the network and the transaction will give the miner ether before any other player could have attempted to win the game. Verdict, Time Manipulation is present.
 
 
-ID: Unchecked Low Level Calls
-Description: Calls to low-level functions like 'call()' without checking return values, which can silently fail.
-- Example
+- Example 9
 Input:
 ```
 function withdraw(uint256 _amount) public {
@@ -163,143 +149,34 @@ function withdraw(uint256 _amount) public {
 	msg.sender.send(_amount);
 }
 ```
-Output: "Unchecked Low Level Calls: 1" """
+Output: If the external call is used to send ether to a smart contract that does not accept them (e.g. because it does not have a payable fallback function), the EVM will replace its return value with false. Since the return value is not checked in our example, the function's changes to the contract state will not be reverted, and the etherLeft variable will end up tracking an incorrect value. Verdict, Unchecked Low Level Calls is present.
+"""
 
+VD_SUFFIX = """
+Analyze the smart contract for the nine vulnerabilities listed above.
 
-FEW_SHOT_WITH_EXPLANATION = """
-ID: Access Control
-Description: Improper restriction of function access, allowing unauthorized users to execute critical functions.
-- Example
-Input:
-```
-function initContract() public {
-	owner = msg.sender;
-}
-```
-Output: The contract's initialization function sets the caller as the owner but is not part of the constructor. It lacks access restrictions and does not track whether it has already been called. As a result, any user can invoke the function and assign ownership to themselves, potentially leading to unauthorized access to privileged functionality. Verdict, Access Control: 1
+For each vulnerability:
+- Output exactly one line in the format:
+  <ID>: Present | Absent | Uncertain
+- Then provide a brief explanation.
 
-ID: Arithmetic
-Description: Missing or incorrect integer overflow/underflow checks, leading to unexpected values.
-- Example
-Input:
-```
-function withdraw(uint _amount) {
-	require(balances[msg.sender] - _amount > 0);
-	msg.sender.transfer(_amount);
-	balances[msg.sender] -= _amount;
-}
-```
-Output: The function does not check for integer underflow, allowing you to withdraw an infinite amount of tokens. Verdict, Arithmetic: 1
+Rules:
+- Use the exact ID strings provided.
+- Do not skip any vulnerability.
+- Base conclusions strictly on the code.
+- Be conservative: if unsure, use "Uncertain".
+"""
 
-ID: Bad Randomness
-Description: Use of predictable values for randomness, which attackers can manipulate.
-- Example
-Input:
-```
-uint256 private seed;
+TASK_VD = """Here are nine common vulnerabilities:
+""" + VULNS + VD_SUFFIX
 
-function play() public payable {
-	require(msg.value >= 1 ether);
-	if (block.blockhash(blockNumber) % 2 == 0) {
-		msg.sender.transfer(this.balance);
-	}
-}
-```
-Output: A private seed is used in combination with an iteration number and the keccak256 hash function to determine if the caller wins. Even though the seed is private, it must have been set via a transaction at some point in time and thus is visible on the blockchain. Verdict, Bad Randomness: 1
+TASK_VD_FEW_SHOT = """Here are nine common vulnerabilities:
+""" + VULNS + """
 
-ID: Denial Of Service
-Description: Malicious actions that consume excessive gas or exploit fallback behavior to block contract functionality.
-- Example
-Input:
-```
-function becomePresident() payable {
-    require(msg.value >= price); 
-    president.transfer(price);   
-    president = msg.sender;      
-    price = price * 2;           
-}
-```
-Output: The function allows you to become the president if you publicly bribe the previous one. Unfortunately, if the previous president is a smart contract and causes reversion on payment, the transfer of power will fail and the malicious smart contract will remain president forever. Verdict, Denial Of Service: 1
+Here are examples of how individual vulnerabilities may be identified and explained:
+""" + FEW_SHOT + VD_SUFFIX
 
-ID: Front Running
-Description: Exploiting transaction order to manipulate outcomes before others.
-- Example
-Input:
-```
-function solve(string memory solution) public {
-    require(
-        hash == keccak256(abi.encodePacked(solution)), "Incorrect answer"
-    );
-    (bool sent,) = msg.sender.call{value : 10 ether}("");
-    require(sent, "Failed to send Ether");
-}
-```
-Output: The function leaks the secret solution in the transaction data, allowing an attacker to front-run the original user by submitting the same solution with a higher gas fee, thereby stealing the Ether reward. Verdict, Front Running: 1
-
-ID: Reentrancy
-Description: Recursive calls into the same contract before the initial function completes, leading to unexpected state changes.
-- Example
-Input:
-```
-function withdraw(uint _amount) {
-	require(balances[msg.sender] >= _amount);
-	msg.sender.call.value(_amount)();
-	balances[msg.sender] -= _amount;
-}
-```
-Output: The function is vulnerable to a reentrancy attack. When the low level call() function sends ether to the msg.sender address, it becomes vulnerable; if the address is a smart contract, the payment will trigger its fallback function with what's left of the transaction gas. Verdict, Reentrancy: 1
-
-ID: Short Addresses
-Description: Failure to validate input lengths, allowing crafted shorter inputs to corrupt parameters.
-- Example
-Input:
-```
-function transfer(address _to, uint256 _value) public {
-    require(balances[msg.sender] >= _value);
-    balances[msg.sender] -= _value;
-    balances[_to] += _value;
-    emit Transfer(msg.sender, _to, _value);
-}
-```
-Output: An attacker can exploit the contract by sending a transaction with a malformed 19-byte address instead of the standard 20 bytes. Because the contract reads a fixed 20-byte address, it mistakenly includes the first byte of the token amount as part of the address. This misalignment results in the contract interpreting a much larger token amount—up to 256 times more—than intended, enabling the attacker to steal excess tokens. Verdict, Short Addresses: 1
-
-ID: Time Manipulation
-Description: Dependence on block timestamps that miners can influence.
-- Example
-Input:
-```
-function play() public {
-	require(now > 1521763200 && neverPlayed == true);
-	neverPlayed = false;
-	msg.sender.transfer(1500 ether);
-}
-```
-Output: The function only accepts calls that come after a specific date. Since miners can influence their block's timestamp (to a certain extent), they can attempt to mine a block containing their transaction with a block timestamp set in the future. If it is close enough, it will be accepted on the network and the transaction will give the miner ether before any other player could have attempted to win the game. Verdict, Time Manipulation: 1
-
-
-ID: Unchecked Low Level Calls
-Description: Calls to low-level functions like 'call()' without checking return values, which can silently fail.
-- Example
-Input:
-```
-function withdraw(uint256 _amount) public {
-	require(balances[msg.sender] >= _amount);
-	balances[msg.sender] -= _amount;
-	etherLeft -= _amount;
-	msg.sender.send(_amount);
-}
-```
-Output: If the external call is used to send ether to a smart contract that does not accept them (e.g. because it does not have a payable fallback function), the EVM will replace its return value with false. Since the return value is not checked in our example, the function's changes to the contract state will not be reverted, and the etherLeft variable will end up tracking an incorrect value. Verdict, Unchecked Low Level Calls: 1 """
-
-
-TASK_VD = "Here are nine common vulnerabilities: " + VULNS + "\nCheck the following smart contract for the above vulnerabilities. "
-
-TASK_VD_FEW_SHOT = "Here are nine common vulnerabilities: " + FEW_SHOT + "\nCheck the following smart contract for the above vulnerabilities. "
-TASK_VD_FEW_SHOT_WITH_EXPLANATION = "Here are nine common vulnerabilities: " + FEW_SHOT_WITH_EXPLANATION + "\nCheck the following smart contract for the above vulnerabilities. "
-
-
-TASK_SA = """
-Here are nine common vulnerabilities:
+TASK_SA = """Here are nine common vulnerabilities:
 """ + VULNS + """
 
 The following text is a vulnerability detection result for a smart contract.
@@ -327,10 +204,9 @@ Time Manipulation: 0
 Unchecked Low Level Calls: 0
 """
 
-INPUT = "\nThe input is:\n{input}."
+INPUT = "\nThe input is:\n{input}"
 
 ################################################ PROMPTS ################################################
-# ORIGINAL_PROMPT_SA = ROLE_SA + TASK_SA + COT + INPUT
 SA = TASK_SA + INPUT
 
 # PERSONA variants are given through execution flags.
