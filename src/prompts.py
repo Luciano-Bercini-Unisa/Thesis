@@ -216,7 +216,7 @@ INPUT = "\nThe input is:\n{input}"
 ################################################ PROMPTS ################################################
 SA = TASK_SA + INPUT
 
-# PERSONA variants for VD are given through execution flags (for SA it's always enabled).
+# ROLE  variants for VD are given through execution flags (for SA it's always enabled).
 ZS = TASK_VD + INPUT
 ZS_COT = TASK_VD + COT + INPUT
 FS = TASK_VD_FEW_SHOT + INPUT

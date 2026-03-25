@@ -369,15 +369,8 @@ def main():
                 torch.cuda.empty_cache()
                 torch.cuda.reset_peak_memory_stats()
 
-            # Per-inference Tracking.
-            vd_tracker = create_tracker(out_dir, safe_model_name, f"vd_{cat_key}/{file_name}")
-            sa_tracker = create_tracker(out_dir, safe_model_name, f"sa_{cat_key}/{file_name}")
-
-            # Right now, the CodeCarbon tracker still measures only the detection step, not the SA call.
-            # That’s fine for the moment if your priority is wiring the semantics.
-            # If later you want energy of the whole pipeline (detection + SA), just move tracker.stop()
-            # to after run_semantic_analysis so it wraps both calls.
             print(f"Executing detection for {file_name}")
+            vd_tracker = create_tracker(out_dir, safe_model_name, f"vd_{cat_key}/{file_name}")
             vd_tracker.start()
             vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
                                                             max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
@@ -393,6 +386,7 @@ def main():
                 torch.cuda.empty_cache()
             # --- Semantic analysis step (second prompt) ---
             sa_prompt = get_prompt(sa_template, vd_reply)
+            sa_tracker = create_tracker(out_dir, safe_model_name, f"sa_{cat_key}/{file_name}")
             sa_tracker.start()
             sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
                 tokenizer,
