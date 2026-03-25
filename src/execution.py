@@ -8,6 +8,7 @@
 # The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
+
 os.environ["PYTORCH_ALLOC_CONF"] = "expandable_segments:True"
 import torch, time, csv
 import json
@@ -57,8 +58,8 @@ def load_model(model_name):
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
         device_map="auto"
-        #device_map=infer_auto_device_map(mdl)
-        #device_map={"": 1}
+        # device_map=infer_auto_device_map(mdl)
+        # device_map={"": 1}
     ).eval())
     return tok, mdl
 
@@ -71,7 +72,7 @@ def get_prompt(prompt_template: str, code: str) -> str:
 def run_one_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p):
     if supports_chat(tokenizer):
         return run_chat_inference(tokenizer, mod, system_prompt, user_prompt, max_new_tokens, temperature, top_p)
-    else: # Fallback to plain text generation when the model doesn’t support a chat format.
+    else:  # Fallback to plain text generation when the model doesn’t support a chat format.
         return run_sanity_inference(tokenizer, mod, user_prompt, max_new_tokens, temperature, top_p)
 
 
@@ -150,7 +151,7 @@ def generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperat
     dt = time.time() - t0
 
     in_len = input_tensors["input_ids"].shape[-1]
-    gen_ids = out[0][in_len:] # Decode only the answer, not the full prompt.
+    gen_ids = out[0][in_len:]  # Decode only the answer, not the full prompt.
     output_text = tokenizer.decode(gen_ids, skip_special_tokens=True)
     out_len = out[0].shape[-1] - in_len
     return in_len, out_len, dt, output_text
@@ -170,27 +171,6 @@ def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
                                                        max_new_tokens=SA_MAX_NEW_TOKENS, temperature=0.0, top_p=1.0
                                                        )
     return in_len, out_len, secs, sa_text.strip()
-
-
-def last_energy_kwh(csv_path):
-    """
-    Return energy_kwh from the last row of a CodeCarbon emissions.csv file.
-    Returns None if missing or malformed.
-    """
-    try:
-        with open(csv_path, encoding="utf-8") as csv_file:
-            lines = [ln.strip() for ln in csv_file if ln.strip()]
-    except (FileNotFoundError, OSError):
-        return None
-    if len(lines) <= 1:
-        return None
-    header = lines[0].split(",")
-    last_line = lines[-1].split(",")
-    try:
-        k_idx = header.index("energy_consumed")
-        return float(last_line[k_idx])
-    except (ValueError, IndexError):
-        return None
 
 
 # ------------ SA PARSING. ------------
@@ -289,17 +269,6 @@ def prepare_run_paths(model_name: str, effective_prompt: str):
     return safe_model_name, csv_path, json_path, out_dir
 
 
-def create_tracker(out_dir, safe_model_name: str, experiment_id: str):
-    return EmissionsTracker(
-        measure_power_secs=10,
-        output_dir=str(out_dir),
-        save_to_file=True,
-        project_name=safe_model_name,
-        experiment_id=experiment_id,
-        log_level="error"
-    )
-
-
 # ---------- main ----------
 def main():
     args = parse_args()
@@ -310,126 +279,138 @@ def main():
         effective_prompt = args.prompt
 
     safe_model_name, csv_path, json_path, out_dir = prepare_run_paths(args.model, effective_prompt)
-    print(f"\nLoading model: {args.model}")
-    tokenizer, model = load_model(args.model)
-    # Warm-up to stabilize clock/caching.
-    print("Running warm-up inference...")
-    _ = run_one_inference(tokenizer, model, None, "Warm up.",
-                          max_new_tokens=16, temperature=TEMPERATURE, top_p=TOP_P)
-    # CSV.
-    file_output = open(csv_path, "w", newline="", encoding="utf-8")
-    writer = csv.writer(file_output)
-    # HEADERS.
-    writer.writerow([
-        "category", "file_name",
-        "vd_input_tokens", "vd_output_tokens", "vd_total_tokens",
-        "vd_latency_s", "vd_energy_kwh", "vd_emissions_kg",
+    tracker = EmissionsTracker(measure_power_secs=1, output_dir=str(out_dir), save_to_file=True,
+                               project_name=safe_model_name, experiment_id="full_run", log_level="error")
+    file_output = None
+    try:
+        print(f"\nLoading model: {args.model}")
+        tokenizer, model = load_model(args.model)
+        # Warm-up to stabilize clock/caching.
+        print("Running warm-up inference...")
+        _ = run_one_inference(tokenizer, model, None, "Warm up.",
+                              max_new_tokens=16, temperature=TEMPERATURE, top_p=TOP_P)
+        # CSV.
+        file_output = open(csv_path, "w", newline="", encoding="utf-8")
+        writer = csv.writer(file_output)
+        # HEADERS.
+        writer.writerow([
+            "category", "file_name",
+            "vd_input_tokens", "vd_output_tokens", "vd_total_tokens",
+            "vd_latency_s", "vd_energy_kwh", "vd_emissions_kg",
 
-        "sa_input_tokens", "sa_output_tokens", "sa_total_tokens",
-        "sa_latency_s", "sa_energy_kwh", "sa_emissions_kg",
+            "sa_input_tokens", "sa_output_tokens", "sa_total_tokens",
+            "sa_latency_s", "sa_energy_kwh", "sa_emissions_kg",
 
-        "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
-    ])
-    processed = set()
-    if args.resume_json and Path(args.resume_json).exists():
-        with open(args.resume_json, encoding="utf-8") as f:
-            try:
-                prev = json.load(f)
-                processed = {(x.get("category"), x.get("file_name")) for x in prev}
-            except json.JSONDecodeError:
-                processed = set()
-    tpl = PROMPT_TEMPLATES[args.prompt]
-    sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
-    if args.role:
-        sys_p = ROLE_VD.strip()
-    else:
-        sys_p = None
-    json_results = []
-    for cat_key, cat_name in KEYS_TO_CATEGORIES.items():
-        category_directory = os.path.join(args.dataset, str(cat_key))
-        print(f"Analyzing files of vulnerability category: {cat_name}")
-        if not os.path.isdir(category_directory):
-            continue
-        for file_name in os.listdir(category_directory):
-            if not file_name.endswith(".sol"):
+            "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
+        ])
+        processed = set()
+        if args.resume_json and Path(args.resume_json).exists():
+            with open(args.resume_json, encoding="utf-8") as f:
+                try:
+                    prev = json.load(f)
+                    processed = {(x.get("category"), x.get("file_name")) for x in prev}
+                except json.JSONDecodeError:
+                    processed = set()
+        tpl = PROMPT_TEMPLATES[args.prompt]
+        sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
+        if args.role:
+            sys_p = ROLE_VD.strip()
+        else:
+            sys_p = None
+        json_results = []
+        for cat_key, cat_name in KEYS_TO_CATEGORIES.items():
+            category_directory = os.path.join(args.dataset, str(cat_key))
+            print(f"Analyzing files of vulnerability category: {cat_name}")
+            if not os.path.isdir(category_directory):
                 continue
-            key = (cat_name, file_name)
-            if key in processed:
-                continue
-            with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
-                code = f.read()
-            if args.strip_comments:
-                code = strip_solidity_comments(code)
-            vd_prompt = get_prompt(tpl, code)
+            for file_name in sorted(os.listdir(category_directory)):
+                if not file_name.endswith(".sol"):
+                    continue
+                key = (cat_name, file_name)
+                if key in processed:
+                    continue
+                with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
+                    code = f.read()
+                if args.strip_comments:
+                    code = strip_solidity_comments(code)
+                vd_prompt = get_prompt(tpl, code)
 
-            # Emptying the PyTorch CUDA cache so that each inference starts with a clean state (helps with OOM too).
-            # It doesn't free the VRAM of the model (good).
-            # Constant overhead (marginal).
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-                torch.cuda.reset_peak_memory_stats()
+                # Emptying the PyTorch CUDA cache so that each inference starts with a clean state (helps with OOM too).
+                # It doesn't free the VRAM of the model (good).
+                # Constant overhead (marginal).
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.reset_peak_memory_stats()
 
-            print(f"Executing detection for {file_name}")
-            vd_tracker = create_tracker(out_dir, safe_model_name, f"vd_{cat_key}/{file_name}")
-            vd_tracker.start()
-            vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
-                                                            max_new_tokens=VD_MAX_NEW_TOKENS, temperature=TEMPERATURE,
-                                                            top_p=TOP_P)
-            vd_emissions_kg = vd_tracker.stop()  # Per-inference kg CO2e.
-            print(f"Completed detection for {file_name} "
-                f"(in={vd_in_t}, out={vd_out_t}, time={vd_secs:.2f}s)"
-            )
-            # Read energy_kwh for the last appended row.
-            vd_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
-            # Helps with OOM errors.
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-            # --- Semantic analysis step (second prompt) ---
-            sa_prompt = get_prompt(sa_template, vd_reply)
-            sa_tracker = create_tracker(out_dir, safe_model_name, f"sa_{cat_key}/{file_name}")
-            sa_tracker.start()
-            sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
-                tokenizer,
-                model,
-                sa_prompt
-            )
-            sa_emissions_kg = sa_tracker.stop()
-            sa_energy_kwh = last_energy_kwh(out_dir / "emissions.csv")
-            # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
-            prediction_map = parse_sa_output(sa_reply)
-            # Build JSON result entry.
-            json_results.append({
-                "model_name": args.model,
-                "prompt_key": effective_prompt,
-                "category": cat_name,
-                "file_name": file_name,
-                "detection_output": vd_reply,
-                "semantic_output": sa_reply,
-                "prediction_map": prediction_map,  # 0/1 dictionary.
-            })
-            # CSV row.
-            writer.writerow([
-                cat_name, file_name,
+                print(f"Executing detection for {file_name}")
+                vd_task_name = f"vd_{cat_key}_{file_name}"
 
-                vd_in_t, vd_out_t, vd_in_t + vd_out_t,
-                f"{vd_secs:.6f}",
-                f"{vd_energy_kwh:.9f}" if vd_energy_kwh is not None else "",
-                f"{vd_emissions_kg:.9f}" if vd_emissions_kg is not None else "",
+                tracker.start_task(vd_task_name)
+                vd_in_t, vd_out_t, vd_secs, vd_reply = run_one_inference(tokenizer, model, sys_p, vd_prompt,
+                                                                         max_new_tokens=VD_MAX_NEW_TOKENS,
+                                                                         temperature=TEMPERATURE,
+                                                                         top_p=TOP_P)
+                vd_emission_data = tracker.stop_task()
 
-                sa_in_t, sa_out_t, sa_in_t + sa_out_t,
-                f"{sa_secs:.6f}",
-                f"{sa_energy_kwh:.9f}" if sa_energy_kwh is not None else "",
-                f"{sa_emissions_kg:.9f}" if sa_emissions_kg is not None else "",
+                print(f"Completed detection for {file_name} "
+                      f"(in={vd_in_t}, out={vd_out_t}, time={vd_secs:.2f}s)"
+                      )
+                vd_energy_kwh = vd_emission_data.energy_consumed
+                vd_emissions_kg = vd_emission_data.emissions
+                # Helps with OOM errors.
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                # --- Semantic analysis step (second prompt) ---
+                sa_prompt = get_prompt(sa_template, vd_reply)
 
-                vd_prompt, vd_reply, sa_prompt, sa_reply
-            ])
-            file_output.flush()  # Ensure rows land even if interrupted.
-    file_output.close()
-    # ---- Save one JSON per run ----
-    with open(json_path, "w", encoding="utf-8") as jf:
-        json.dump(json_results, jf, indent=2)
-    print(f"Saved JSON results: {json_path}")
-    print(f"Saved CSV results: {csv_path}")
+                sa_task_name = f"sa_{cat_key}_{file_name}"
+                tracker.start_task(sa_task_name)
+                sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
+                    tokenizer,
+                    model,
+                    sa_prompt
+                )
+                sa_emission_data = tracker.stop_task()
+                sa_energy_kwh = sa_emission_data.energy_consumed
+                sa_emissions_kg = sa_emission_data.emissions
+                # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
+                prediction_map = parse_sa_output(sa_reply)
+                # Build JSON result entry.
+                json_results.append({
+                    "model_name": args.model,
+                    "prompt_key": effective_prompt,
+                    "category": cat_name,
+                    "file_name": file_name,
+                    "detection_output": vd_reply,
+                    "semantic_output": sa_reply,
+                    "prediction_map": prediction_map,  # 0/1 dictionary.
+                })
+                # CSV row.
+                writer.writerow([
+                    cat_name, file_name,
+
+                    vd_in_t, vd_out_t, vd_in_t + vd_out_t,
+                    f"{vd_secs:.6f}",
+                    f"{vd_energy_kwh:.9f}" if vd_energy_kwh is not None else "",
+                    f"{vd_emissions_kg:.9f}" if vd_emissions_kg is not None else "",
+
+                    sa_in_t, sa_out_t, sa_in_t + sa_out_t,
+                    f"{sa_secs:.6f}",
+                    f"{sa_energy_kwh:.9f}" if sa_energy_kwh is not None else "",
+                    f"{sa_emissions_kg:.9f}" if sa_emissions_kg is not None else "",
+
+                    vd_prompt, vd_reply, sa_prompt, sa_reply
+                ])
+                file_output.flush()  # Ensure rows land even if interrupted.
+        # ---- Save one JSON per run ----
+        with open(json_path, "w", encoding="utf-8") as jf:
+            json.dump(json_results, jf, indent=2)
+        print(f"Saved JSON results: {json_path}")
+        print(f"Saved CSV results: {csv_path}")
+    finally:
+        if file_output is not None and not file_output.closed:
+            file_output.close()
+        tracker.stop()
 
 
 if __name__ == "__main__":
