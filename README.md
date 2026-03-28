@@ -53,7 +53,6 @@ results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE_COT/
 --prompt KEY              (required) One of: ZS, ZS_COT, FS
 --role                    Enable role pattern via system prompt
 --strip_comments          Strip Solidity comments (enabled by default)
---resume_json FILE        Resume a previous run and skip processed files
 --sa_prompt SA_KEY        Semantic analysis prompt (default: SA)
 
 ### Prompt keys
@@ -73,7 +72,7 @@ Role conditioning is applied exclusively via the system prompt.
 sshleifer/tiny-gpt2                      Sanity-check model  
 microsoft/Phi-3.5-mini-instruct          Small LLM (3.8B params)
 Qwen/Qwen2.5-14B-Instruct                Medium LLM  
-deepseek-ai/deepseek-coder-33b-instruct  Large LLM  
+deepseek-ai/deepseek-coder-33b-instruct  Large LLM
 
 # Example runs
 

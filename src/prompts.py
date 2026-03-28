@@ -292,10 +292,10 @@ FS_COT = TASK_VD_FEW_SHOT + COT + INPUT
 # Full list for optimal experimentation:
 # ZS
 # ZS_COT
-# ZS_PERSONA
-# ZS_PERSONA_COT
+# ZS_ROLE
+# ZS_ROLE_COT
 
 # FS
 # FS_COT
-# FS_PERSONA
-# FS_PERSONA_COT
+# FS_ROLE
+# FS_ROLE_COT

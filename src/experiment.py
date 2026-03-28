@@ -41,7 +41,7 @@ def main() -> None:
     ap.add_argument("--dataset", required=True, help="Path to SmartBugs-Curated root")
     ap.add_argument("--model", required=True, help="HF model name (e.g. microsoft/Phi-3.5-mini-instruct)")
     ap.add_argument("--prompt", required=True, help="Prompt key (e.g. ZS, ZS_COT, FS)")
-    ap.add_argument("--persona", action="store_true", help="Enable VD persona (system prompt)")
+    ap.add_argument("--role", action="store_true", help="Enable VD role (system prompt)")
     ap.add_argument("--runs", type=int, default=5, help="Number of repeated runs")
     ap.add_argument("--sa_prompt", default="SA", help="Semantic analysis prompt key (e.g. SA, STRUCTURED_SA)")
     ap.add_argument("--strip_comments", action="store_true", help="Strip Solidity comments (default: keep)")
@@ -50,8 +50,8 @@ def main() -> None:
     args = ap.parse_args()
 
     safe_model = args.model.replace("/", "__")
-    if args.persona:
-        effective_prompt = f"{args.prompt}_PERSONA"
+    if args.role:
+        effective_prompt = f"{args.prompt}_ROLE"
     else:
         effective_prompt = args.prompt
     # 1. Execution (repeat N times).
@@ -62,8 +62,8 @@ def main() -> None:
             "--prompt", args.prompt,
             "--sa_prompt", args.sa_prompt,
         ]
-        if args.persona:
-            exec_args.append("--persona")
+        if args.role:
+            exec_args.append("--role")
         if args.strip_comments:
             exec_args.append("--strip_comments")
 
