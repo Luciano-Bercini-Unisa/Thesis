@@ -44,9 +44,7 @@ def main() -> None:
     ap.add_argument("--persona", action="store_true", help="Enable VD persona (system prompt)")
     ap.add_argument("--runs", type=int, default=5, help="Number of repeated runs")
     ap.add_argument("--sa_prompt", default="SA", help="Semantic analysis prompt key (e.g. SA, STRUCTURED_SA)")
-
     ap.add_argument("--strip_comments", action="store_true", help="Strip Solidity comments (default: keep)")
-    ap.add_argument("--resume", action="store_true", help="Resume from last run JSON (best-effort)")
     ap.add_argument("--skip_evaluation", action="store_true")
     ap.add_argument("--skip_aggregation", action="store_true")
     args = ap.parse_args()
@@ -58,14 +56,6 @@ def main() -> None:
         effective_prompt = args.prompt
     # 1. Execution (repeat N times).
     for i in range(args.runs):
-        resume_json = ""
-        if args.resume:
-            base_dir = ROOT / "results" / safe_model / effective_prompt
-            # Resume from the most recent run_*.json, if any.
-            runs = sorted(base_dir.glob("run_*.json"))
-            if runs:
-                resume_json = str(runs[-1])
-
         exec_args = [
             "--model", args.model,
             "--dataset", args.dataset,
@@ -76,8 +66,6 @@ def main() -> None:
             exec_args.append("--persona")
         if args.strip_comments:
             exec_args.append("--strip_comments")
-        if resume_json:
-            exec_args.extend(["--resume_json", resume_json])
 
         run_py("execution.py", exec_args)
     # 2. Evaluation.

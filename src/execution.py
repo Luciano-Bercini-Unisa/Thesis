@@ -21,7 +21,7 @@ from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
     # Include the vulnerability-detection templates.
-    ZS, ZS_COT, FS, ROLE_VD,
+    ORIGINAL_ZS_COT, ZS, ZS_COT, FS, ROLE_VD,
     # Include also the Semantic Analysis templates.
     SA, ROLE_SA,
 )
@@ -34,6 +34,7 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "1"))
 
 PROMPT_TEMPLATES = {
+    "ORIGINAL_ZS_COT": ORIGINAL_ZS_COT,
     "ZS": ZS,
     "ZS_COT": ZS_COT,
     "FS": FS,
@@ -246,7 +247,6 @@ def parse_args():
     ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
     ap.add_argument("--role", action="store_true", help="Enable VD role pattern via system prompt.")
     ap.add_argument("--strip_comments", action="store_true", default=True, dest="strip_comments")
-    ap.add_argument("--resume_json", help="Optional JSON to resume and skip processed files")
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
     return ap.parse_args()
 
@@ -304,13 +304,6 @@ def main():
             "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
         ])
         processed = set()
-        if args.resume_json and Path(args.resume_json).exists():
-            with open(args.resume_json, encoding="utf-8") as f:
-                try:
-                    prev = json.load(f)
-                    processed = {(x.get("category"), x.get("file_name")) for x in prev}
-                except json.JSONDecodeError:
-                    processed = set()
         tpl = PROMPT_TEMPLATES[args.prompt]
         sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
         if args.role:
