@@ -282,6 +282,7 @@ ORIGINAL_SA = ORIGINAL_TASK_SA + COT + INPUT
 SA = TASK_SA + INPUT
 
 # ROLE variants for VD are given through execution flags (for SA it's always enabled).
+ORIGINAL_ZS = ORIGINAL_TASK_VD + INPUT
 ORIGINAL_ZS_COT = ORIGINAL_TASK_VD + COT + INPUT
 
 ZS = TASK_VD + INPUT

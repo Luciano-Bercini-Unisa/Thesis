@@ -21,7 +21,7 @@ from difflib import get_close_matches
 from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
 from prompts import (
     # Include the vulnerability-detection templates.
-    ORIGINAL_ZS_COT, ZS, ZS_COT, FS, ROLE_VD,
+    ORIGINAL_ZS, ORIGINAL_ZS_COT, ZS, ZS_COT, FS, ROLE_VD,
     # Include also the Semantic Analysis templates.
     SA, ROLE_SA,
 )
@@ -34,6 +34,7 @@ TEMPERATURE = float(os.getenv("TEMPERATURE", "0.7"))
 TOP_P = float(os.getenv("TOP_P", "1"))
 
 PROMPT_TEMPLATES = {
+    "ORIGINAL_ZS": ORIGINAL_ZS,
     "ORIGINAL_ZS_COT": ORIGINAL_ZS_COT,
     "ZS": ZS,
     "ZS_COT": ZS_COT,
