@@ -4,7 +4,8 @@
 # The output is a directory for the given prompt, which contains a CSV for each run.
 # Each CSV has stats about each contract's inference.
 
-# After that, it runs Semantic Analysis of the previous detection output.
+# After VD, the output is converted into a binary prediction map
+# either through a deterministic parser or through the Semantic Analysis prompt.
 # The output is a JSON with, among other stats, the prediction map (for quality evaluation).
 
 import os
@@ -163,40 +164,33 @@ def supports_chat(tokenizer):
     return hasattr(tokenizer, "chat_template") and tokenizer.chat_template is not None
 
 
-def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
-    """
-    Runs the semantic analyzer prompt on the free-form detection_text
-    and returns (input_tokens, output_tokens, latency_s, sa_reply_text).
-    """
-    in_len, out_len, secs, sa_text = run_one_inference(tokenizer, mod, system_prompt=ROLE_SA,
-                                                       user_prompt=sa_user_prompt,
-                                                       max_new_tokens=SA_MAX_NEW_TOKENS, temperature=0.0, top_p=1.0
-                                                       )
-    return in_len, out_len, secs, sa_text.strip()
-
-
-# ------------ SA PARSING. ------------
+# ------------ OUTPUT NORMALIZATION / PARSING. ------------
 # Map lowercase canonical names → proper category names.
 CANONICAL = {name.lower(): name for name in CATEGORIES}
 
 # Add synonym normalization
 SYNONYMS = {
     "short address attack": "Short Addresses",
+    "short address": "Short Addresses",
     "arithmetic issues": "Arithmetic",
     "integer overflow": "Arithmetic",
+    "integer underflow": "Arithmetic",
     "unchecked return values": "Unchecked Low Level Calls",
+    "unchecked return values for low level calls": "Unchecked Low Level Calls",
     "dos": "Denial Of Service",
-    "denial of service": "Denial Of Service",
+    "transaction ordering dependence": "Front Running",
+    "timestamp dependence": "Time Manipulation",
 }
 
 
 def normalize_name(s):
     s = s.lower().strip()
-    # Strip markdown.
-    s = re.sub(r"[*_`]+", "", s)
-    # Strip numbering (e.g., "1. Foo").
-    s = re.sub(r"^\d+\.\s*", "", s)
-    # Remove parentheses content.
+    # Strip Markdown and bullets.
+    s = re.sub(r"[*_`#>\-]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    # Strip numbering like "1. Foo" or "1) Foo".
+    s = re.sub(r"^\d+\s*[.)]\s*", "", s)
+    # Remove parenthetical notes.
     s = re.sub(r"\([^)]*\)", "", s).strip()
     # Direct synonyms.
     if s in SYNONYMS:
@@ -204,13 +198,47 @@ def normalize_name(s):
     # Exact canonical match.
     if s in CANONICAL:
         return CANONICAL[s]
-
-    # fuzzy match to canonical names
-    match = get_close_matches(s, CANONICAL.keys(), n=1, cutoff=0.6)
+    # Fuzzy match to canonical names.
+    match = get_close_matches(s, CANONICAL.keys(), n=1, cutoff=0.75)
     if match:
         return CANONICAL[match[0]]
-
     return None
+
+
+def normalize_vd_verdict(s):
+    s = s.lower().strip()
+    s = re.sub(r"[^a-z ]+", "", s)
+    if s == "present":
+        return 1
+    if s == "absent":
+        return 0
+    if s == "uncertain":
+        return 0
+    return None
+
+
+def parse_vd_output(vd_text: str):
+    """
+    Deterministically parse VD output of the form:
+    <ID>: Present | Absent | Uncertain
+
+    Returns a prediction map with all categories present.
+    Missing or unparsable categories default to 0.
+    """
+    prediction_map = {name: 0 for name in CATEGORIES}
+
+    pairs = re.findall(
+        r"(?im)^\s*([A-Za-z0-9 ()_/\-]+?)\s*:\s*(Present|Absent|Uncertain)\b",
+        vd_text
+    )
+
+    for raw_name, raw_verdict in pairs:
+        norm_name = normalize_name(raw_name)
+        norm_verdict = normalize_vd_verdict(raw_verdict)
+        if norm_name is not None and norm_verdict is not None:
+            prediction_map[norm_name] = norm_verdict
+
+    return prediction_map
 
 
 # Extracts every colon-separated pair anywhere in the text
@@ -233,12 +261,16 @@ def parse_sa_output(sa_text: str):
     return prediction_map
 
 
-# def format_peak_cuda_mem():
-#     if not torch.cuda.is_available():
-#         return ""
-#     peak_alloc_gb = torch.cuda.max_memory_allocated() / 1024**3
-#     peak_reserved_gb = torch.cuda.max_memory_reserved() / 1024**3
-#     return f", peak_alloc={peak_alloc_gb:.2f} GB, peak_reserved={peak_reserved_gb:.2f} GB"
+def run_semantic_analysis(tokenizer, mod, sa_user_prompt: str):
+    """
+    Runs the semantic analyzer prompt on the free-form detection_text
+    and returns (input_tokens, output_tokens, latency_s, sa_reply_text).
+    """
+    in_len, out_len, secs, sa_text = run_one_inference(tokenizer, mod, system_prompt=ROLE_SA,
+                                                       user_prompt=sa_user_prompt,
+                                                       max_new_tokens=SA_MAX_NEW_TOKENS, temperature=0.0, top_p=1.0
+                                                       )
+    return in_len, out_len, secs, sa_text.strip()
 
 
 def parse_args():
@@ -247,13 +279,19 @@ def parse_args():
     ap.add_argument("--dataset", required=True, help="Path to smartbugs-curated root.")
     ap.add_argument("--prompt", required=True, choices=sorted(PROMPT_TEMPLATES.keys()))
     ap.add_argument("--role", action="store_true", help="Enable VD role pattern via system prompt.")
-    ap.add_argument("--strip_comments", action="store_true", default=True, dest="strip_comments")
+    ap.add_argument("--no_strip_comments", action="store_false", dest="strip_comments")
+    ap.set_defaults(strip_comments=True)
+    ap.add_argument("--parser_mode",
+        default="deterministic",
+        choices=["deterministic", "sa"],
+        help="How to convert VD output into the final binary prediction map."
+    )
     ap.add_argument("--sa_prompt", default="SA", choices=sorted(SA_PROMPT_TEMPLATES_MAP.keys()))
     return ap.parse_args()
 
 
 def prepare_run_paths(model_name: str, effective_prompt: str):
-    # The model name uses "/", which would create a subfolder and hence it's replaced by "_".
+    # The model name uses "/", which would create a subfolder, and hence it's replaced by "_".
     safe_model_name = model_name.replace("/", "__")
     base_dir = Path("results") / safe_model_name / effective_prompt
     base_dir.mkdir(parents=True, exist_ok=True)
@@ -273,12 +311,12 @@ def prepare_run_paths(model_name: str, effective_prompt: str):
 # ---------- main ----------
 def main():
     args = parse_args()
-    # Derive an effective prompt key (explicitly encode role).
+    # Derive an effective prompt key (explicitly encode the role).
     if args.role:
         effective_prompt = f"{args.prompt}_ROLE"
     else:
         effective_prompt = args.prompt
-
+    effective_prompt = f"{effective_prompt}_{args.parser_mode.upper()}"
     safe_model_name, csv_path, json_path, out_dir = prepare_run_paths(args.model, effective_prompt)
     tracker = EmissionsTracker(measure_power_secs=1, output_dir=str(out_dir), save_to_file=True,
                                project_name=safe_model_name, experiment_id="full_run", log_level="error")
@@ -304,7 +342,6 @@ def main():
 
             "vd_prompt", "vd_reply", "sa_prompt", "sa_reply"
         ])
-        processed = set()
         tpl = PROMPT_TEMPLATES[args.prompt]
         sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
         if args.role:
@@ -321,8 +358,6 @@ def main():
                 if not file_name.endswith(".sol"):
                     continue
                 key = (cat_name, file_name)
-                if key in processed:
-                    continue
                 with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
                     code = f.read()
                 if args.strip_comments:
@@ -354,25 +389,36 @@ def main():
                 # Helps with OOM errors.
                 if torch.cuda.is_available():
                     torch.cuda.empty_cache()
-                # --- Semantic analysis step (second prompt) ---
-                sa_prompt = get_prompt(sa_template, vd_reply)
+                # --- Convert VD output into the final prediction map ---
+                if args.parser_mode == "deterministic":
+                    prediction_map = parse_vd_output(vd_reply)
+                    sa_in_t = 0
+                    sa_out_t = 0
+                    sa_secs = 0.0
+                    sa_energy_kwh = 0.0
+                    sa_emissions_kg = 0.0
+                    sa_prompt = ""
+                    sa_reply = ""
 
-                sa_task_name = f"sa_{cat_key}_{file_name}"
-                tracker.start_task(sa_task_name)
-                sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
-                    tokenizer,
-                    model,
-                    sa_prompt
-                )
-                sa_emission_data = tracker.stop_task()
-                sa_energy_kwh = sa_emission_data.energy_consumed
-                sa_emissions_kg = sa_emission_data.emissions
-                # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
-                prediction_map = parse_sa_output(sa_reply)
+                elif args.parser_mode == "sa":
+                    sa_prompt = get_prompt(sa_template, vd_reply)
+                    sa_task_name = f"sa_{cat_key}_{file_name}"
+                    tracker.start_task(sa_task_name)
+                    sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
+                        tokenizer,
+                        model,
+                        sa_prompt
+                    )
+                    sa_emission_data = tracker.stop_task()
+                    sa_energy_kwh = sa_emission_data.energy_consumed
+                    sa_emissions_kg = sa_emission_data.emissions
+                    # Parse semantic analyzer output → dict ('access_control': 0/1, ...)
+                    prediction_map = parse_sa_output(sa_reply)
                 # Build JSON result entry.
                 json_results.append({
                     "model_name": args.model,
                     "prompt_key": effective_prompt,
+                    "parser_mode": args.parser_mode,
                     "category": cat_name,
                     "file_name": file_name,
                     "detection_output": vd_reply,

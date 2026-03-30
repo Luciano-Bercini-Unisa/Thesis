@@ -12,7 +12,7 @@
 # To mitigate model instability, each experiment is repeated five times and results are averaged.
 
 # 3. Finally, in the aggregation phase, quality metrics are combined with energy and token statistics to
-# generate a consolidated report at the model–prompt level.
+# generate a consolidated report at the model-prompt level.
 # This allows direct comparison between prompt-engineering strategies in terms of
 # effectiveness, efficiency, and sustainability.
 
@@ -38,13 +38,20 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="Run full experiment pipeline: execution -> evaluation -> aggregation"
     )
-    ap.add_argument("--dataset", required=True, help="Path to SmartBugs-Curated root")
     ap.add_argument("--model", required=True, help="HF model name (e.g. microsoft/Phi-3.5-mini-instruct)")
+    ap.add_argument("--dataset", required=True, help="Path to SmartBugs-Curated root")
     ap.add_argument("--prompt", required=True, help="Prompt key (e.g. ZS, ZS_COT, FS)")
     ap.add_argument("--role", action="store_true", help="Enable VD role (system prompt)")
     ap.add_argument("--runs", type=int, default=5, help="Number of repeated runs")
-    ap.add_argument("--sa_prompt", default="SA", help="Semantic analysis prompt key (e.g. SA, STRUCTURED_SA)")
-    ap.add_argument("--strip_comments", action="store_true", help="Strip Solidity comments (default: keep)")
+    ap.add_argument("--sa_prompt", default="SA", help="Semantic analysis prompt key, used only when parser_mode='sa'")
+    ap.add_argument("--no_strip_comments", action="store_false", dest="strip_comments")
+    ap.set_defaults(strip_comments=True)
+    ap.add_argument(
+        "--parser_mode",
+        default="deterministic",
+        choices=["deterministic", "sa"],
+        help="How to convert VD output into the final binary prediction map."
+    )
     ap.add_argument("--skip_evaluation", action="store_true")
     ap.add_argument("--skip_aggregation", action="store_true")
     args = ap.parse_args()
@@ -54,6 +61,7 @@ def main() -> None:
         effective_prompt = f"{args.prompt}_ROLE"
     else:
         effective_prompt = args.prompt
+    effective_prompt = f"{effective_prompt}_{args.parser_mode.upper()}"
     # 1. Execution (repeat N times).
     for i in range(args.runs):
         exec_args = [
@@ -61,11 +69,12 @@ def main() -> None:
             "--dataset", args.dataset,
             "--prompt", args.prompt,
             "--sa_prompt", args.sa_prompt,
+            "--parser_mode", args.parser_mode,
         ]
         if args.role:
             exec_args.append("--role")
-        if args.strip_comments:
-            exec_args.append("--strip_comments")
+        if not args.strip_comments:
+            exec_args.append("--no_strip_comments")
 
         run_py("execution.py", exec_args)
     # 2. Evaluation.
