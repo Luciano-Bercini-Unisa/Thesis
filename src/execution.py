@@ -221,6 +221,11 @@ def normalize_vd_verdict(s):
     return None
 
 
+def normalize_vd_text(text: str) -> str:
+    text = re.sub(r"[*_`]+", "", text)
+    return text
+
+
 def parse_vd_output(vd_text: str):
     """
     Deterministically parse VD output and return:
@@ -238,18 +243,16 @@ def parse_vd_output(vd_text: str):
     prediction_map = {name: 0 for name in CATEGORIES}
     parsed_labels = set()
 
+    cleaned_text = normalize_vd_text(vd_text)
+
     # ---------- PASS 1: direct "<label>: <verdict>" anywhere in text ----------
     direct_pattern = re.compile(
-        r"(?i)(?:^|[\n\r]|[\.\-]\s+|\*\*\s*)"
-        r"(<?\s*ID\s*:\s*)?"
-        r"([A-Za-z][A-Za-z ()_\-]+?)"
-        r"\s*>?\s*:\s*"
-        r"([*_`]*\s*(?:Present|Absent|Uncertain)\s*[*_`]*)\b"
+        r"(?im)^\s*(?:ID\s*:\s*)?([A-Za-z][A-Za-z ()_\-]+?)\s*:\s*(.+)$"
     )
 
-    for m in direct_pattern.finditer(vd_text):
-        raw_name = m.group(2).strip()
-        raw_verdict = m.group(3).strip()
+    for m in direct_pattern.finditer(cleaned_text):
+        raw_name = m.group(1).strip()
+        raw_verdict = m.group(2).strip()
 
         norm_name = normalize_name(raw_name)
         if norm_name is None:
@@ -263,7 +266,7 @@ def parse_vd_output(vd_text: str):
         parsed_labels.add(norm_name)
 
     # ---------- PASS 2: state machine for "ID: X" + "Explanation: Y" ----------
-    lines = [line.strip() for line in vd_text.splitlines() if line.strip()]
+    lines = [line.strip() for line in cleaned_text.splitlines() if line.strip()]
     current_label = None
 
     for line in lines:
@@ -376,7 +379,11 @@ def prepare_run_paths(model_name: str, effective_prompt: str):
     base_dir = Path("results") / safe_model_name / effective_prompt
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    run_id = len(list(base_dir.glob("run_*.json"))) + 1
+    run_files = [
+        p for p in base_dir.glob("run_*.json")
+        if re.fullmatch(r"run_\d{3}\.json", p.name)
+    ]
+    run_id = len(run_files) + 1
     run_tag = f"run_{run_id:03d}"
 
     csv_path = base_dir / f"{run_tag}.csv"
