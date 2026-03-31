@@ -248,7 +248,7 @@ def parse_vd_output(vd_text: str):
 
     # ---------- PASS 1: direct "<label>: <verdict>" anywhere in text ----------
     direct_pattern = re.compile(
-        r"(?im)^\s*(?:ID\s*:\s*)?([A-Za-z][A-Za-z ()_\-]+?)\s*:\s*(.+)$"
+        r"(?im)^[ \t]*(?:ID[ \t]*:[ \t]*)?([A-Za-z][A-Za-z ()_\-]+?)[ \t]*:[ \t]*([^\n\r]+)$"
     )
 
     for m in direct_pattern.finditer(cleaned_text):
