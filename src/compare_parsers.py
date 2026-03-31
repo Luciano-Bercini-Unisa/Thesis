@@ -57,6 +57,7 @@ def main():
 
     with open(input_path, "r", encoding="utf-8") as f:
         data = json.load(f)
+        print(f"Loaded {len(data)} entries from {input_path}")
 
     print(f"Loading model: {args.model}")
     tokenizer, model = load_model(args.model)
@@ -67,7 +68,7 @@ def main():
     for i, item in enumerate(data, start=1):
         vd_reply = item["detection_output"]
 
-        deterministic_prediction_map = parse_vd_output(vd_reply)
+        deterministic_prediction_map, deterministic_parsed_labels = parse_vd_output(vd_reply)
 
         sa_prompt = get_prompt(sa_template, vd_reply)
         sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
@@ -85,6 +86,8 @@ def main():
             "detection_output": vd_reply,
 
             "deterministic_prediction_map": deterministic_prediction_map,
+            "deterministic_parsed_labels": sorted(deterministic_parsed_labels),
+            "deterministic_parsed_count": len(deterministic_parsed_labels),
 
             "sa_prompt_key": args.sa_prompt,
             "sa_prompt": sa_prompt,
