@@ -11,7 +11,7 @@ def load_metrics(prompt_folder: Path):
     path = prompt_folder / "average_results.json"
     with path.open("r", encoding="utf-8") as f:
         data = json.load(f)
-    return data["macro_avg"], data["per_class"]
+    return data["macro_avg"]
 
 
 def load_raw_csvs(prompt_folder: Path):
@@ -42,7 +42,7 @@ def main():
             if not avg_path.exists():
                 continue
 
-            macro, _ = load_metrics(prompt_dir)
+            macro = load_metrics(prompt_dir)
             df, num_runs = load_raw_csvs(prompt_dir)
 
             for col in [

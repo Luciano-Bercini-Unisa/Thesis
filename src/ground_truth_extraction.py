@@ -1,6 +1,6 @@
 # Utility that extracts the ground-truth vulnerabilities from "smartbugs-curated/vulnerabilities.json".
 import json
-from vulnerabilities_constants import KEYS_TO_CATEGORIES, CATEGORIES
+from .vulnerabilities_constants import KEYS_TO_CATEGORIES, CATEGORIES
 
 def extract_ground_truth(json_path="smartbugs-curated/vulnerabilities.json"):
     with open(json_path, encoding="utf-8") as f:

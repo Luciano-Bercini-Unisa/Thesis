@@ -22,8 +22,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import defaultdict
-from ground_truth_extraction import extract_ground_truth
-from vulnerabilities_constants import  CATEGORIES
+from .ground_truth_extraction import extract_ground_truth
+from .vulnerabilities_constants import  CATEGORIES
 
 def compute_metrics(gt, predictions):
     """

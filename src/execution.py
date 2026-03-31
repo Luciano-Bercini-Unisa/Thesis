@@ -87,7 +87,7 @@ def run_chat_inference(tokenizer, mod, system_prompt: str | None, user_prompt: s
 def run_sanity_inference(tokenizer, mod, user_prompt: str, max_new_tokens, temperature, top_p):
     model_ctx = getattr(mod.config, "n_ctx", None) or getattr(mod.config, "max_position_embeddings", 1024)
     safety = 8
-    max_input_tokens = min(256, model_ctx - max_new_tokens - safety)
+    max_input_tokens = max(1, model_ctx - max_new_tokens - safety)
     input_tensors = tokenize_plain_input(tokenizer, mod, user_prompt, max_input_tokens)
     return generate_from_inputs(tokenizer, mod, input_tensors, max_new_tokens, temperature, top_p)
 

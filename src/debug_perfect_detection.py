@@ -1,10 +1,10 @@
 # Checks which contracts were perfectly classified.
 # This is done by matching the model's semantic-analysis predictions against the SmartBugs ground truth.
-# No output other than printing to console (debug utility).
+# No output other than printing to the console (debug utility).
 import argparse
 import glob
 import json
-from ground_truth_extraction import extract_ground_truth
+from .ground_truth_extraction import extract_ground_truth
 
 
 def load_run_json(path):
@@ -43,10 +43,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--folder", required=True, help="Folder inside results/, e.g. VARIANT_1")
     args = parser.parse_args()
-    # Load SmartBugs ground truth once.
+    # Load SmartBugs groundtruth once.
     ground_truth = extract_ground_truth()
-    # Collect all *_output.json result files in the chosen folder.
-    run_files = sorted(glob.glob(f"./results/{args.folder}/*_output.json"))
+    # Collect all json result files in the chosen folder.
+    run_files = sorted(glob.glob(f"./results/{args.folder}/run_*.json"))
     # Track perfect detections across all runs.
     # Initialize all contracts as 'not perfectly detected'.
     overall = {fn: False for fn in ground_truth}

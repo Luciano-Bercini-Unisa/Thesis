@@ -21,23 +21,3 @@ KEYS_TO_CATEGORIES = {
     "time_manipulation": "Time Manipulation",
     "unchecked_low_level_calls": "Unchecked Low Level Calls",
 }
-
-
-def expected_map(category_key):
-    """
-    Given a vulnerability category (e.g. 'reentrancy'),
-    return the perfect expected output map:
-
-        {
-            "Access Control": 0,
-            "Arithmetic": 0,
-            "Bad Randomness": 0,
-            ...
-            "Reentrancy": 1,
-            ...
-        }
-    """
-    output_map = {k: 0 for k in CATEGORIES} # All zeros.
-    expected_key = KEYS_TO_CATEGORIES[category_key]
-    output_map[expected_key] = 1
-    return output_map

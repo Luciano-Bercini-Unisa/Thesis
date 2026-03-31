@@ -16,6 +16,7 @@ def run(cmd):
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -26,9 +27,5 @@ if __name__ == "__main__":
     parser.add_argument("--prompt", required=True, help="Prompt key (e.g. ZS, ZS_COT)")
     args = parser.parse_args()
 
-    debug = os.path.join(ROOT, "debug_perfect_detection.py")
     metrics = os.path.join(ROOT, "metrics.py")
-
-    folder = f"{args.model}/{args.prompt}"
-    run([sys.executable, debug, "--folder", folder])
     run([sys.executable, metrics, "--model", args.model, "--prompt", args.prompt])
