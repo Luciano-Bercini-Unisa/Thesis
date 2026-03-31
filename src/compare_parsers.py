@@ -3,6 +3,8 @@
 # This script reads an existing run_XXX.json produced by execution.py, reuses each detection_output,
 # applies both post-processing methods, and saves a comparison JSON.
 
+import inspect
+from . import execution as execution_module
 import argparse
 import json
 import csv
@@ -74,6 +76,23 @@ def main():
         data = json.load(f)
         print(f"Loaded {len(data)} entries from {input_path}")
 
+    print("execution.py loaded from:", execution_module.__file__)
+    print("parse_vd_output source:\n")
+    print(inspect.getsource(execution_module.parse_vd_output))
+    print("\nnormalize_name source:\n")
+    print(inspect.getsource(execution_module.normalize_name))
+    print("\nextract_vd_verdict source:\n")
+    print(inspect.getsource(execution_module.extract_vd_verdict))
+
+    test_text = """**Access Control**: Present
+    Explanation: test
+    **Arithmetic**: Absent
+    Explanation: test
+    """
+    test_map, test_labels = parse_vd_output(test_text)
+    print("TEST PARSE LABELS:", sorted(test_labels))
+    print("TEST PARSE MAP:", test_map)
+
     print(f"Loading model: {args.model}")
     tokenizer, model = load_model(args.model)
     sa_template = SA_PROMPT_TEMPLATES_MAP[args.sa_prompt]
@@ -84,17 +103,6 @@ def main():
         vd_reply = item["detection_output"]
 
         deterministic_prediction_map, deterministic_parsed_labels = parse_vd_output(vd_reply)
-        if item.get("file_name") in {
-            "arbitrary_location_write_simple.sol",
-            "incorrect_constructor_name3.sol",
-        }:
-            print("\n===== DEBUG FILE =====")
-            print(item["file_name"])
-            print("PARSED LABELS:", sorted(deterministic_parsed_labels))
-            print("PRED MAP:", deterministic_prediction_map)
-            print("RAW OUTPUT:")
-            print(vd_reply)
-            print("======================\n")
         sa_prompt = get_prompt(sa_template, vd_reply)
         sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
             tokenizer,
