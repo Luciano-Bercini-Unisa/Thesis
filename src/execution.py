@@ -223,49 +223,71 @@ def normalize_vd_verdict(s):
 
 def parse_vd_output(vd_text: str):
     """
-    Deterministically parse VD output of the form:
-    <ID>: Present | Absent | Uncertain
+    Deterministically parse VD output and return:
+    - prediction_map
+    - parsed_labels
 
-    Returns a prediction map with all categories present.
-    Missing, ambiguous, or unparsable categories default to 0.
+    Supported patterns:
+    1. Access Control: Present
+    2. <ID: Access Control>: Present
+    3. ID: Access Control
+       Explanation: Present
     """
     prediction_map = {name: 0 for name in CATEGORIES}
     parsed_labels = set()
-    for line in vd_text.splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        # Skip explanation lines.
-        if line.lower().startswith("explanation"):
-            continue
-        # Try to split on the LAST colon, so cases like
+
+    lines = [line.strip() for line in vd_text.splitlines() if line.strip()]
+
+    current_label = None
+
+    for line in lines:
+        # Pattern 1 / 2: same-line verdict, e.g.
+        # "Access Control: Present"
         # "<ID: Access Control>: Present"
-        # are handled correctly.
-        if ":" not in line:
+        if ":" in line:
+            left, right = line.rsplit(":", 1)
+            raw_name = left.strip()
+            raw_verdict = right.strip()
+
+            norm_name = normalize_name(raw_name)
+
+            if norm_name is not None:
+                # Reject copied templates like "Present | Absent | Uncertain"
+                if "|" not in raw_verdict:
+                    m = re.match(r"^(Present|Absent|Uncertain)\b", raw_verdict, flags=re.IGNORECASE)
+                    if m:
+                        norm_verdict = normalize_vd_verdict(m.group(1))
+                        if norm_verdict is not None:
+                            prediction_map[norm_name] = norm_verdict
+                            parsed_labels.add(norm_name)
+                            current_label = None
+                            continue
+
+        # Pattern 3a: "ID: Access Control"
+        m_id = re.match(r"^ID\s*:\s*(.+)$", line, flags=re.IGNORECASE)
+        if m_id:
+            current_label = normalize_name(m_id.group(1))
             continue
 
-        left, right = line.rsplit(":", 1)
-        raw_name = left.strip()
-        raw_verdict = right.strip()
+        # Pattern 3b: "Explanation: Present"
+        if current_label is not None:
+            # Reject copied templates like "Explanation: Present | Absent | Uncertain"
+            if "|" in line:
+                current_label = None
+                continue
 
-        norm_name = normalize_name(raw_name)
-        if norm_name is None:
-            continue
-
-        # Reject ambiguous copied templates like:
-        # "Present | Absent | Uncertain"
-        if "|" in raw_verdict:
-            continue
-
-        # Keep only the first word in case of extra prose after the verdict.
-        m = re.match(r"^(Present|Absent|Uncertain)\b", raw_verdict, flags=re.IGNORECASE)
-        if not m:
-            continue
-
-        norm_verdict = normalize_vd_verdict(m.group(1))
-        if norm_verdict is not None:
-            prediction_map[norm_name] = norm_verdict
-            parsed_labels.add(norm_name)
+            m_expl = re.match(
+                r"^Explanation\s*:\s*(Present|Absent|Uncertain)\b",
+                line,
+                flags=re.IGNORECASE
+            )
+            if m_expl:
+                norm_verdict = normalize_vd_verdict(m_expl.group(1))
+                if norm_verdict is not None:
+                    prediction_map[current_label] = norm_verdict
+                    parsed_labels.add(current_label)
+                current_label = None
+                continue
 
     return prediction_map, parsed_labels
 
