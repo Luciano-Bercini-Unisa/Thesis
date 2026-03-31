@@ -53,11 +53,6 @@ def positive_labels(prediction_map: dict) -> str:
     return "; ".join(label for label, value in prediction_map.items() if value == 1)
 
 
-def excerpt(text: str, max_len: int = 300) -> str:
-    text = " ".join(text.split())
-    return text[:max_len] + ("..." if len(text) > max_len else "")
-
-
 def main():
     args = parse_args()
 
@@ -148,7 +143,7 @@ def main():
             "sa_total_tokens": sa_in_t + sa_out_t,
             "sa_latency_s": sa_secs,
 
-            "detection_output_excerpt": excerpt(vd_reply),
+            "detection_output_excerpt": vd_reply,
         })
 
         print(f"[{i}/{len(data)}] Compared parsers for {item.get('file_name')}")

@@ -232,40 +232,67 @@ def parse_vd_output(vd_text: str):
     2. <ID: Access Control>: Present
     3. ID: Access Control
        Explanation: Present
+    4. ID: Access Control Explanation: Present
+    5. **Access Control**: Present Explanation: ...
     """
     prediction_map = {name: 0 for name in CATEGORIES}
     parsed_labels = set()
 
-    lines = [line.strip() for line in vd_text.splitlines() if line.strip()]
+    # ---------- PASS 1: direct "<label>: <verdict>" anywhere in text ----------
+    direct_pattern = re.compile(
+        r"(?i)(?:^|[\n\r]|[\.\-]\s+|\*\*\s*)"
+        r"(<?\s*ID\s*:\s*)?"
+        r"([A-Za-z][A-Za-z ()_\-]+?)"
+        r"\s*>?\s*:\s*"
+        r"([*_`]*\s*(?:Present|Absent|Uncertain)\s*[*_`]*)\b"
+    )
 
+    for m in direct_pattern.finditer(vd_text):
+        raw_name = m.group(2).strip()
+        raw_verdict = m.group(3).strip()
+
+        norm_name = normalize_name(raw_name)
+        if norm_name is None:
+            continue
+
+        norm_verdict = extract_vd_verdict(raw_verdict)
+        if norm_verdict is None:
+            continue
+
+        prediction_map[norm_name] = norm_verdict
+        parsed_labels.add(norm_name)
+
+    # ---------- PASS 2: state machine for "ID: X" + "Explanation: Y" ----------
+    lines = [line.strip() for line in vd_text.splitlines() if line.strip()]
     current_label = None
 
     for line in lines:
-        # Pattern 1 / 2: same-line verdict, e.g.
-        # "Access Control: Present"
-        # "<ID: Access Control>: Present"
-        if ":" in line:
-            left, right = line.rsplit(":", 1)
-            raw_name = left.strip()
-            raw_verdict = right.strip()
+        m_id = re.match(r"^ID\s*:\s*(.+)$", line, flags=re.IGNORECASE)
+        if m_id:
+            remainder = m_id.group(1).strip()
 
-            norm_name = normalize_name(raw_name)
+            # Case: "ID: Access Control Explanation: Present"
+            m_inline = re.match(
+                r"^(.*?)\s+Explanation\s*:\s*(.+)$",
+                remainder,
+                flags=re.IGNORECASE
+            )
+            if m_inline:
+                raw_name = m_inline.group(1).strip()
+                raw_verdict = m_inline.group(2).strip()
 
-            if norm_name is not None:
+                norm_name = normalize_name(raw_name)
                 norm_verdict = extract_vd_verdict(raw_verdict)
-                if norm_verdict is not None:
+
+                if norm_name is not None and norm_verdict is not None:
                     prediction_map[norm_name] = norm_verdict
                     parsed_labels.add(norm_name)
                     current_label = None
                     continue
 
-        # Pattern 3a: "ID: Access Control"
-        m_id = re.match(r"^ID\s*:\s*(.+)$", line, flags=re.IGNORECASE)
-        if m_id:
-            current_label = normalize_name(m_id.group(1))
+            current_label = normalize_name(remainder)
             continue
 
-        # Pattern 3b: "Explanation: Present"
         if current_label is not None:
             m_expl = re.match(r"^Explanation\s*:\s*(.+)$", line, flags=re.IGNORECASE)
             if m_expl:
@@ -281,14 +308,16 @@ def parse_vd_output(vd_text: str):
 
 def extract_vd_verdict(text: str):
     text = text.strip()
-    text = re.sub(r"[*_`]+", "", text)  # remove markdown emphasis
+    text = re.sub(r"[*_`]+", "", text)
     text = text.strip()
     # Reject copied templates like "Present | Absent | Uncertain"
     if "|" in text:
         return None
+
     m = re.match(r"^(Present|Absent|Uncertain)\b", text, flags=re.IGNORECASE)
     if not m:
         return None
+
     return normalize_vd_verdict(m.group(1))
 
 
