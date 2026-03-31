@@ -68,7 +68,7 @@ def main():
     if args.output_json:
         output_path = Path(args.output_json)
     else:
-        output_path = input_path.with_name(input_path.stem + "_parser_comparison.json")
+        output_path = input_path.with_name("parser_comparison_" + input_path.stem + ".json")
 
     if args.output_csv:
         csv_output_path = Path(args.output_csv)

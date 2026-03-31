@@ -252,16 +252,12 @@ def parse_vd_output(vd_text: str):
             norm_name = normalize_name(raw_name)
 
             if norm_name is not None:
-                # Reject copied templates like "Present | Absent | Uncertain"
-                if "|" not in raw_verdict:
-                    m = re.match(r"^(Present|Absent|Uncertain)\b", raw_verdict, flags=re.IGNORECASE)
-                    if m:
-                        norm_verdict = normalize_vd_verdict(m.group(1))
-                        if norm_verdict is not None:
-                            prediction_map[norm_name] = norm_verdict
-                            parsed_labels.add(norm_name)
-                            current_label = None
-                            continue
+                norm_verdict = extract_vd_verdict(raw_verdict)
+                if norm_verdict is not None:
+                    prediction_map[norm_name] = norm_verdict
+                    parsed_labels.add(norm_name)
+                    current_label = None
+                    continue
 
         # Pattern 3a: "ID: Access Control"
         m_id = re.match(r"^ID\s*:\s*(.+)$", line, flags=re.IGNORECASE)
@@ -271,18 +267,9 @@ def parse_vd_output(vd_text: str):
 
         # Pattern 3b: "Explanation: Present"
         if current_label is not None:
-            # Reject copied templates like "Explanation: Present | Absent | Uncertain"
-            if "|" in line:
-                current_label = None
-                continue
-
-            m_expl = re.match(
-                r"^Explanation\s*:\s*(Present|Absent|Uncertain)\b",
-                line,
-                flags=re.IGNORECASE
-            )
+            m_expl = re.match(r"^Explanation\s*:\s*(.+)$", line, flags=re.IGNORECASE)
             if m_expl:
-                norm_verdict = normalize_vd_verdict(m_expl.group(1))
+                norm_verdict = extract_vd_verdict(m_expl.group(1))
                 if norm_verdict is not None:
                     prediction_map[current_label] = norm_verdict
                     parsed_labels.add(current_label)
@@ -290,6 +277,19 @@ def parse_vd_output(vd_text: str):
                 continue
 
     return prediction_map, parsed_labels
+
+
+def extract_vd_verdict(text: str):
+    text = text.strip()
+    text = re.sub(r"[*_`]+", "", text)  # remove markdown emphasis
+    text = text.strip()
+    # Reject copied templates like "Present | Absent | Uncertain"
+    if "|" in text:
+        return None
+    m = re.match(r"^(Present|Absent|Uncertain)\b", text, flags=re.IGNORECASE)
+    if not m:
+        return None
+    return normalize_vd_verdict(m.group(1))
 
 
 # Extracts every colon-separated pair anywhere in the text
