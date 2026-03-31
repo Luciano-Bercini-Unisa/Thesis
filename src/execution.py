@@ -223,6 +223,7 @@ def normalize_vd_verdict(s):
 
 def normalize_vd_text(text: str) -> str:
     text = re.sub(r"[*_`]+", "", text)
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     return text
 
 
@@ -254,6 +255,10 @@ def parse_vd_output(vd_text: str):
         raw_name = m.group(1).strip()
         raw_verdict = m.group(2).strip()
 
+        if "Access" in raw_name or "Access" in raw_verdict:
+            print("DEBUG PASS1 RAW NAME:", repr(raw_name))
+            print("DEBUG PASS1 RAW VERDICT:", repr(raw_verdict))
+
         norm_name = normalize_name(raw_name)
         if norm_name is None:
             continue
@@ -270,6 +275,8 @@ def parse_vd_output(vd_text: str):
     current_label = None
 
     for line in lines:
+        if "Access Control" in line:
+            print("DEBUG ACCESS LINE:", repr(line))
         m_id = re.match(r"^ID\s*:\s*(.+)$", line, flags=re.IGNORECASE)
         if m_id:
             remainder = m_id.group(1).strip()
