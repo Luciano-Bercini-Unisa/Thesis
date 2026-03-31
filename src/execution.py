@@ -19,8 +19,8 @@ from pathlib import Path
 from codecarbon import EmissionsTracker
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from difflib import get_close_matches
-from vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
-from prompts import (
+from .vulnerabilities_constants import CATEGORIES, KEYS_TO_CATEGORIES
+from .prompts import (
     # Include the vulnerability-detection templates.
     ORIGINAL_ZS, ORIGINAL_ZS_COT, ZS, ZS_COT, FS, ROLE_VD,
     # Include also the Semantic Analysis templates.
@@ -185,9 +185,13 @@ SYNONYMS = {
 
 def normalize_name(s):
     s = s.lower().strip()
+    # Remove angle brackets.
+    s = s.replace("<", " ").replace(">", " ")
     # Strip Markdown and bullets.
     s = re.sub(r"[*_`#>\-]+", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
+    # Strip leading "id:".
+    s = re.sub(r"^id\s*:\s*", "", s).strip()
     # Strip numbering like "1. Foo" or "1) Foo".
     s = re.sub(r"^\d+\s*[.)]\s*", "", s)
     # Remove parenthetical notes.
@@ -223,22 +227,47 @@ def parse_vd_output(vd_text: str):
     <ID>: Present | Absent | Uncertain
 
     Returns a prediction map with all categories present.
-    Missing or unparsable categories default to 0.
+    Missing, ambiguous, or unparsable categories default to 0.
     """
     prediction_map = {name: 0 for name in CATEGORIES}
+    parsed_labels = set()
+    for line in vd_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # Skip explanation lines.
+        if line.lower().startswith("explanation"):
+            continue
+        # Try to split on the LAST colon, so cases like
+        # "<ID: Access Control>: Present"
+        # are handled correctly.
+        if ":" not in line:
+            continue
 
-    pairs = re.findall(
-        r"(?im)^\s*([A-Za-z0-9 ()_/\-]+?)\s*:\s*(Present|Absent|Uncertain)\b",
-        vd_text
-    )
+        left, right = line.rsplit(":", 1)
+        raw_name = left.strip()
+        raw_verdict = right.strip()
 
-    for raw_name, raw_verdict in pairs:
         norm_name = normalize_name(raw_name)
-        norm_verdict = normalize_vd_verdict(raw_verdict)
-        if norm_name is not None and norm_verdict is not None:
-            prediction_map[norm_name] = norm_verdict
+        if norm_name is None:
+            continue
 
-    return prediction_map
+        # Reject ambiguous copied templates like:
+        # "Present | Absent | Uncertain"
+        if "|" in raw_verdict:
+            continue
+
+        # Keep only the first word in case of extra prose after the verdict.
+        m = re.match(r"^(Present|Absent|Uncertain)\b", raw_verdict, flags=re.IGNORECASE)
+        if not m:
+            continue
+
+        norm_verdict = normalize_vd_verdict(m.group(1))
+        if norm_verdict is not None:
+            prediction_map[norm_name] = norm_verdict
+            parsed_labels.add(norm_name)
+
+    return prediction_map, parsed_labels
 
 
 # Extracts every colon-separated pair anywhere in the text
@@ -357,7 +386,6 @@ def main():
             for file_name in sorted(os.listdir(category_directory)):
                 if not file_name.endswith(".sol"):
                     continue
-                key = (cat_name, file_name)
                 with open(os.path.join(category_directory, file_name), encoding="utf-8") as f:
                     code = f.read()
                 if args.strip_comments:
@@ -391,7 +419,10 @@ def main():
                     torch.cuda.empty_cache()
                 # --- Convert VD output into the final prediction map ---
                 if args.parser_mode == "deterministic":
-                    prediction_map = parse_vd_output(vd_reply)
+                    prediction_map, parsed_labels = parse_vd_output(vd_reply)
+                    if len(parsed_labels) < len(CATEGORIES):
+                        print(f"\n[DEBUG] Deterministic parser parsed {len(parsed_labels)}/{len(CATEGORIES)} labels")
+                        print(vd_reply[:1000], flush=True)
                     sa_in_t = 0
                     sa_out_t = 0
                     sa_secs = 0.0
