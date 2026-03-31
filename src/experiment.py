@@ -48,7 +48,7 @@ def main() -> None:
     ap.set_defaults(strip_comments=True)
     ap.add_argument(
         "--parser_mode",
-        default="deterministic",
+        default="sa",
         choices=["deterministic", "sa"],
         help="How to convert VD output into the final binary prediction map."
     )
