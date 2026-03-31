@@ -84,7 +84,17 @@ def main():
         vd_reply = item["detection_output"]
 
         deterministic_prediction_map, deterministic_parsed_labels = parse_vd_output(vd_reply)
-
+        if item.get("file_name") in {
+            "arbitrary_location_write_simple.sol",
+            "incorrect_constructor_name3.sol",
+        }:
+            print("\n===== DEBUG FILE =====")
+            print(item["file_name"])
+            print("PARSED LABELS:", sorted(deterministic_parsed_labels))
+            print("PRED MAP:", deterministic_prediction_map)
+            print("RAW OUTPUT:")
+            print(vd_reply)
+            print("======================\n")
         sa_prompt = get_prompt(sa_template, vd_reply)
         sa_in_t, sa_out_t, sa_secs, sa_reply = run_semantic_analysis(
             tokenizer,
@@ -143,7 +153,7 @@ def main():
             "sa_total_tokens": sa_in_t + sa_out_t,
             "sa_latency_s": sa_secs,
 
-            "detection_output_excerpt": vd_reply,
+            "detection_output": vd_reply,
         })
 
         print(f"[{i}/{len(data)}] Compared parsers for {item.get('file_name')}")
