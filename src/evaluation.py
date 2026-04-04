@@ -11,7 +11,8 @@ import sys
 
 ROOT = os.path.dirname(__file__)
 
-def run(cmd):
+def run_py(module: str, args: list[str]) -> None:
+    cmd = [sys.executable, "-m", f"src.{module}", *args]
     print("\n=== Running ===")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -27,5 +28,4 @@ if __name__ == "__main__":
     parser.add_argument("--prompt", required=True, help="Prompt key (e.g. ZS, ZS_COT)")
     args = parser.parse_args()
 
-    metrics = os.path.join(ROOT, "metrics.py")
-    run([sys.executable, metrics, "--model", args.model, "--prompt", args.prompt])
+    run_py("metrics", ["--model", args.model, "--prompt", args.prompt])
