@@ -1,7 +1,5 @@
 """
-Orchestrates the full evaluation pipeline:
-1. Compute perfect detections (debug utility) from SmartBugs-curated.
-2. Compute aggregated metrics (precision / recall / F1 / confusion matrices).
+Compute aggregated metrics (precision / recall / F1 / confusion matrices).
 """
 
 import os
