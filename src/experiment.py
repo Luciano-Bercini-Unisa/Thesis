@@ -24,7 +24,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 
-def run_py(script: str, args: list[str]) -> None:
+def run_py(module: str, args: list[str]) -> None:
     cmd = [sys.executable, "-m", f"src.{module}", *args]
     print("\n=== Running ===")
     print(" ".join(cmd))
