@@ -25,10 +25,7 @@ ROOT = Path(__file__).resolve().parent
 
 
 def run_py(script: str, args: list[str]) -> None:
-    script_path = ROOT / script
-    if not script_path.exists():
-        raise FileNotFoundError(f"Missing script: {script_path}")
-    cmd = [sys.executable, str(script_path), *args]
+    cmd = [sys.executable, "-m", f"src.{module}", *args]
     print("\n=== Running ===")
     print(" ".join(cmd))
     subprocess.run(cmd, check=True)
@@ -76,14 +73,14 @@ def main() -> None:
         if not args.strip_comments:
             exec_args.append("--no_strip_comments")
 
-        run_py("execution.py", exec_args)
+        run_py("execution", exec_args)
     # 2. Evaluation.
     if not args.skip_evaluation:
-        run_py("evaluation.py", ["--model", safe_model, "--prompt", effective_prompt])
+        run_py("evaluation", ["--model", safe_model, "--prompt", effective_prompt])
 
     # 3. Aggregation (global over all models/prompts)
     if not args.skip_aggregation:
-        run_py("aggregation.py", [])
+        run_py("aggregation", [])
 
     print("\n=== Done ===")
 
