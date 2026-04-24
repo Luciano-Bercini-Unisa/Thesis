@@ -62,8 +62,8 @@ def load_model(model_name):
         model_name, dtype=DTYPE,
         device_map="auto",
         max_memory={
-        0: "28GiB",
-        1: "28GiB",
+        0: "26GiB",
+        1: "26GiB",
         "cpu": "256GiB"
         }
     ).eval())
