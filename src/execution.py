@@ -60,12 +60,7 @@ def load_model(model_name):
     tok.pad_token = tok.eos_token
     mdl = (AutoModelForCausalLM.from_pretrained(
         model_name, dtype=DTYPE,
-        device_map="auto",
-        max_memory={
-        0: "28GiB",
-        1: "28GiB",
-        "cpu": "256GiB"
-        }
+        device_map="auto"
     ).eval())
 
     print("MODEL DTYPE:", mdl.dtype, flush=True)
