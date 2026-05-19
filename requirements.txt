@@ -11,3 +11,4 @@ hf_xet # Faster downloads of the models.
 optimum
 bitsandbytes
 ninja
+scipy
