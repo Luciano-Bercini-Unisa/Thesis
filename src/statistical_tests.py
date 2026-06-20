@@ -123,11 +123,11 @@ def main():
     print(
         "\nLegend:\n"
         "  delta = mean(configA) - mean(configB).\n"
-        "  r     = rank-biserial correlation in [-1, +1].\n"
-        "          +1 means configA totally dominates, -1 means configB does,\n"
-        "           0 means the distributions are indistinguishable.\n"
-        "  **    = p < 0.05 (two-sided exact Mann-Whitney U test).\n"
-        "  With n=5 per group, the smallest achievable two-sided p-value is 0.0079.\n"
+        "  r = rank-biserial correlation in [-1, +1].\n"
+        "  +1 means configA totally dominates, -1 means configB does,\n"
+        "  0 means the distributions are indistinguishable.\n"
+        "  **= p < 0.05\n"
+        "  With n=5 per group, the smallest achievable p-value is 0.0079.\n"
     )
 
 

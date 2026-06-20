@@ -36,7 +36,7 @@ OUT_CSV = RESULTS_DIR / "final_results.csv"
 REQUIRED_AVG_KEYS = ("macro_avg", "micro_avg", "weighted_avg")
 
 
-def _r(x, n_digits = 4):
+def _r(x, n_digits=4):
     """Round a numeric value to `n_digits` decimals, tolerating NaN/None."""
     try:
         return round(float(x), n_digits)
@@ -57,11 +57,11 @@ def _avg_section(metrics_json: dict, section: str, prefix: str) -> dict:
     """Flatten one aggregation section into prefixed CSV columns."""
     s = metrics_json[section]
     return {
-        f"{prefix}_precision_mean":   s["precision_mean"],
-        f"{prefix}_recall_mean":      s["recall_mean"],
+        f"{prefix}_precision_mean": s["precision_mean"],
+        f"{prefix}_recall_mean": s["recall_mean"],
         f"{prefix}_specificity_mean": s["specificity_mean"],
-        f"{prefix}_f1_mean":          s["f1_mean"],
-        f"{prefix}_f1_std":           s["f1_std"],
+        f"{prefix}_f1_mean": s["f1_mean"],
+        f"{prefix}_f1_std": s["f1_std"],
     }
 
 
@@ -121,65 +121,76 @@ def main():
 
             num_contracts = df[["category", "file_name"]].drop_duplicates().shape[0]
 
-            vd_total_energy    = df["vd_energy_kwh"].sum()
-            sa_total_energy    = df["sa_energy_kwh"].sum()
+            vd_total_energy = df["vd_energy_kwh"].sum()
+            sa_total_energy = df["sa_energy_kwh"].sum()
             vd_total_emissions = df["vd_emissions_kg"].sum()
             sa_total_emissions = df["sa_emissions_kg"].sum()
 
-            vd_input_tokens  = df["vd_input_tokens"].sum()
+            vd_input_tokens = df["vd_input_tokens"].sum()
             vd_output_tokens = df["vd_output_tokens"].sum()
-            vd_total_tokens  = df["vd_total_tokens"].sum()
-            sa_input_tokens  = df["sa_input_tokens"].sum()
+            vd_total_tokens = df["vd_total_tokens"].sum()
+            sa_input_tokens = df["sa_input_tokens"].sum()
             sa_output_tokens = df["sa_output_tokens"].sum()
-            sa_total_tokens  = df["sa_total_tokens"].sum()
+            sa_total_tokens = df["sa_total_tokens"].sum()
 
             vd_total_latency = df["vd_latency_s"].sum()
             sa_total_latency = df["sa_latency_s"].sum()
 
-            combined_energy    = vd_total_energy + sa_total_energy
+            combined_energy = vd_total_energy + sa_total_energy
             combined_emissions = vd_total_emissions + sa_total_emissions
-            combined_latency   = vd_total_latency + sa_total_latency
+            combined_latency = vd_total_latency + sa_total_latency
+
+            single_execution_energy = (combined_energy / num_runs) if (num_runs and combined_energy > 0) else 0.0
 
             row = {
-                "model":  model_name,
+                "model": model_name,
                 "prompt": prompt_name,
 
                 # --- Quality metrics (already rounded inside the JSON). ---
-                **_avg_section(metrics_json, "macro_avg",    "macro"),
-                **_avg_section(metrics_json, "micro_avg",    "micro"),
+                **_avg_section(metrics_json, "macro_avg", "macro"),
+                **_avg_section(metrics_json, "micro_avg", "micro"),
                 **_avg_section(metrics_json, "weighted_avg", "weighted"),
 
                 # --- VD averages. ---
-                "vd_avg_input_tokens":  _r(df["vd_input_tokens"].mean()),
+                "vd_avg_input_tokens": _r(df["vd_input_tokens"].mean()),
                 "vd_avg_output_tokens": _r(df["vd_output_tokens"].mean()),
-                "vd_avg_total_tokens":  _r(df["vd_total_tokens"].mean()),
-                "vd_avg_latency_s":     _r(df["vd_latency_s"].mean()),
-                "vd_total_energy_kwh":  _r_energy(vd_total_energy),
+                "vd_avg_total_tokens": _r(df["vd_total_tokens"].mean()),
+                "vd_avg_latency_s": _r(df["vd_latency_s"].mean()),
+                "vd_total_energy_kwh": _r_energy(vd_total_energy),
                 "vd_total_emissions_kg": _r_energy(vd_total_emissions),
-                "vd_energy_kwh_per_1k_input_tokens":  _r_energy(_per_1k(vd_total_energy, vd_input_tokens)),
+                "vd_energy_kwh_per_1k_input_tokens": _r_energy(_per_1k(vd_total_energy, vd_input_tokens)),
                 "vd_energy_kwh_per_1k_output_tokens": _r_energy(_per_1k(vd_total_energy, vd_output_tokens)),
-                "vd_energy_kwh_per_1k_total_tokens":  _r_energy(_per_1k(vd_total_energy, vd_total_tokens)),
-                "vd_total_latency_s":   _r(vd_total_latency),
+                "vd_energy_kwh_per_1k_total_tokens": _r_energy(_per_1k(vd_total_energy, vd_total_tokens)),
+                "vd_total_latency_s": _r(vd_total_latency),
 
                 # --- SA averages. ---
-                "sa_avg_input_tokens":  _r(df["sa_input_tokens"].mean()),
+                "sa_avg_input_tokens": _r(df["sa_input_tokens"].mean()),
                 "sa_avg_output_tokens": _r(df["sa_output_tokens"].mean()),
-                "sa_avg_total_tokens":  _r(df["sa_total_tokens"].mean()),
-                "sa_avg_latency_s":     _r(df["sa_latency_s"].mean()),
-                "sa_total_energy_kwh":  _r_energy(sa_total_energy),
+                "sa_avg_total_tokens": _r(df["sa_total_tokens"].mean()),
+                "sa_avg_latency_s": _r(df["sa_latency_s"].mean()),
+                "sa_total_energy_kwh": _r_energy(sa_total_energy),
                 "sa_total_emissions_kg": _r_energy(sa_total_emissions),
-                "sa_energy_kwh_per_1k_input_tokens":  _r_energy(_per_1k(sa_total_energy, sa_input_tokens)),
+                "sa_energy_kwh_per_1k_input_tokens": _r_energy(_per_1k(sa_total_energy, sa_input_tokens)),
                 "sa_energy_kwh_per_1k_output_tokens": _r_energy(_per_1k(sa_total_energy, sa_output_tokens)),
-                "sa_energy_kwh_per_1k_total_tokens":  _r_energy(_per_1k(sa_total_energy, sa_total_tokens)),
-                "sa_total_latency_s":   _r(sa_total_latency),
+                "sa_energy_kwh_per_1k_total_tokens": _r_energy(_per_1k(sa_total_energy, sa_total_tokens)),
+                "sa_total_latency_s": _r(sa_total_latency),
 
                 # --- Combined totals. ---
-                "total_energy_kwh":    _r_energy(combined_energy),
-                "total_emissions_kg":  _r_energy(combined_emissions),
-                "combined_latency_s":  _r(combined_latency),
+                "total_energy_kwh": _r_energy(combined_energy),
+                "total_emissions_kg": _r_energy(combined_emissions),
+                "combined_latency_s": _r(combined_latency),
+
+                # Energy for a single execution (total VD+SA divded by the number of runs).
+                "energy_kwh_per_run": _r_energy(single_execution_energy),
+
+                # Trade-off metric: Macro F1/kWh single execution.
+                "macro_f1_per_kwh": _r(
+                    metrics_json["macro_avg"]["f1_mean"] / single_execution_energy
+                    if single_execution_energy > 0 else 0.0
+                ),
 
                 "num_contracts": num_contracts,
-                "num_runs":      num_runs,
+                "num_runs": num_runs,
             }
             rows.append(row)
 
