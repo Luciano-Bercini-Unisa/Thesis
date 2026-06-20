@@ -278,12 +278,12 @@ INPUT = "\nThe input is:\n{input}"
 ################################################ PROMPTS ################################################
 
 # For Semantic-Analysis, the SA ROLE is always added as the system-level role (some LLMs may not support this).
-ORIGINAL_SA = ORIGINAL_TASK_SA + COT + INPUT
+ORIGINAL_SA = ORIGINAL_TASK_SA + ORIGINAL_COT + INPUT
 SA = TASK_SA + INPUT
 
 # ROLE variants for VD are given through execution flags (for SA it's always enabled).
 ORIGINAL_ZS = ORIGINAL_TASK_VD + INPUT
-ORIGINAL_ZS_COT = ORIGINAL_TASK_VD + COT + INPUT
+ORIGINAL_ZS_COT = ORIGINAL_TASK_VD + ORIGINAL_COT + INPUT
 
 ZS = TASK_VD + INPUT
 ZS_COT = TASK_VD + COT + INPUT
