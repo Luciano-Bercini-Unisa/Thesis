@@ -1,0 +1,142 @@
+{
+  "per_class": [
+    {
+      "class": "Access Control",
+      "precision": 0.178,
+      "recall": 0.3778,
+      "specificity": 0.7378,
+      "f1_score": 0.2411,
+      "f1_score_std": 0.069,
+      "support": 18.0,
+      "tp": 6.8,
+      "fp": 31.2,
+      "tn": 87.8,
+      "fn": 11.2
+    },
+    {
+      "class": "Arithmetic",
+      "precision": 0.8441,
+      "recall": 0.6933,
+      "specificity": 0.9836,
+      "f1_score": 0.7601,
+      "f1_score_std": 0.0704,
+      "support": 15.0,
+      "tp": 10.4,
+      "fp": 2.0,
+      "tn": 120.0,
+      "fn": 4.6
+    },
+    {
+      "class": "Bad Randomness",
+      "precision": 0.4565,
+      "recall": 1.0,
+      "specificity": 0.9354,
+      "f1_score": 0.6263,
+      "f1_score_std": 0.0316,
+      "support": 7.0,
+      "tp": 7.0,
+      "fp": 8.4,
+      "tn": 121.6,
+      "fn": 0.0
+    },
+    {
+      "class": "Denial Of Service",
+      "precision": 0.0714,
+      "recall": 0.9,
+      "specificity": 0.4656,
+      "f1_score": 0.1322,
+      "f1_score_std": 0.016,
+      "support": 6.0,
+      "tp": 5.4,
+      "fp": 70.0,
+      "tn": 61.0,
+      "fn": 0.6
+    },
+    {
+      "class": "Front Running",
+      "precision": 0.1768,
+      "recall": 0.4,
+      "specificity": 0.9398,
+      "f1_score": 0.2434,
+      "f1_score_std": 0.1015,
+      "support": 4.0,
+      "tp": 1.6,
+      "fp": 8.0,
+      "tn": 125.0,
+      "fn": 2.4
+    },
+    {
+      "class": "Reentrancy",
+      "precision": 0.4202,
+      "recall": 0.9862,
+      "specificity": 0.6333,
+      "f1_score": 0.589,
+      "f1_score_std": 0.0256,
+      "support": 29.0,
+      "tp": 28.6,
+      "fp": 39.6,
+      "tn": 68.4,
+      "fn": 0.4
+    },
+    {
+      "class": "Short Addresses",
+      "precision": 0.0,
+      "recall": 0.0,
+      "specificity": 0.9868,
+      "f1_score": 0.0,
+      "f1_score_std": 0.0,
+      "support": 1.0,
+      "tp": 0.0,
+      "fp": 1.8,
+      "tn": 134.2,
+      "fn": 1.0
+    },
+    {
+      "class": "Time Manipulation",
+      "precision": 0.1227,
+      "recall": 1.0,
+      "specificity": 0.7288,
+      "f1_score": 0.2186,
+      "f1_score_std": 0.0078,
+      "support": 5.0,
+      "tp": 5.0,
+      "fp": 35.8,
+      "tn": 96.2,
+      "fn": 0.0
+    },
+    {
+      "class": "Unchecked Low Level Calls",
+      "precision": 0.4982,
+      "recall": 0.9846,
+      "specificity": 0.3929,
+      "f1_score": 0.6616,
+      "f1_score_std": 0.0088,
+      "support": 52.0,
+      "tp": 51.2,
+      "fp": 51.6,
+      "tn": 33.4,
+      "fn": 0.8
+    }
+  ],
+  "macro_avg": {
+    "precision_mean": 0.3075,
+    "recall_mean": 0.7047,
+    "specificity_mean": 0.756,
+    "f1_mean": 0.3858,
+    "f1_std": 0.0145
+  },
+  "micro_avg": {
+    "precision_mean": 0.3185,
+    "recall_mean": 0.8467,
+    "specificity_mean": 0.7734,
+    "f1_mean": 0.4629,
+    "f1_std": 0.0146
+  },
+  "weighted_avg": {
+    "precision_mean": 0.4299,
+    "recall_mean": 0.8467,
+    "specificity_mean": 0.6173,
+    "f1_mean": 0.5436,
+    "f1_std": 0.0166
+  }
+}

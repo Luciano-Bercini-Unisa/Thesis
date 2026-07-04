@@ -1,0 +1,142 @@
+{
+  "per_class": [
+    {
+      "class": "Access Control",
+      "precision": 0.1521,
+      "recall": 0.3778,
+      "specificity": 0.6824,
+      "f1_score": 0.2166,
+      "f1_score_std": 0.0472,
+      "support": 18.0,
+      "tp": 6.8,
+      "fp": 37.8,
+      "tn": 81.2,
+      "fn": 11.2
+    },
+    {
+      "class": "Arithmetic",
+      "precision": 0.8397,
+      "recall": 0.7467,
+      "specificity": 0.9803,
+      "f1_score": 0.7846,
+      "f1_score_std": 0.0599,
+      "support": 15.0,
+      "tp": 11.2,
+      "fp": 2.4,
+      "tn": 119.6,
+      "fn": 3.8
+    },
+    {
+      "class": "Bad Randomness",
+      "precision": 0.43,
+      "recall": 0.9714,
+      "specificity": 0.9308,
+      "f1_score": 0.5961,
+      "f1_score_std": 0.0283,
+      "support": 7.0,
+      "tp": 6.8,
+      "fp": 9.0,
+      "tn": 121.0,
+      "fn": 0.2
+    },
+    {
+      "class": "Denial Of Service",
+      "precision": 0.076,
+      "recall": 1.0,
+      "specificity": 0.4427,
+      "f1_score": 0.1413,
+      "f1_score_std": 0.0031,
+      "support": 6.0,
+      "tp": 6.0,
+      "fp": 73.0,
+      "tn": 58.0,
+      "fn": 0.0
+    },
+    {
+      "class": "Front Running",
+      "precision": 0.1764,
+      "recall": 0.5,
+      "specificity": 0.9308,
+      "f1_score": 0.2594,
+      "f1_score_std": 0.0674,
+      "support": 4.0,
+      "tp": 2.0,
+      "fp": 9.2,
+      "tn": 123.8,
+      "fn": 2.0
+    },
+    {
+      "class": "Reentrancy",
+      "precision": 0.3623,
+      "recall": 0.9793,
+      "specificity": 0.537,
+      "f1_score": 0.5289,
+      "f1_score_std": 0.0102,
+      "support": 29.0,
+      "tp": 28.4,
+      "fp": 50.0,
+      "tn": 58.0,
+      "fn": 0.6
+    },
+    {
+      "class": "Short Addresses",
+      "precision": 0.0,
+      "recall": 0.0,
+      "specificity": 0.9794,
+      "f1_score": 0.0,
+      "f1_score_std": 0.0,
+      "support": 1.0,
+      "tp": 0.0,
+      "fp": 2.8,
+      "tn": 133.2,
+      "fn": 1.0
+    },
+    {
+      "class": "Time Manipulation",
+      "precision": 0.1255,
+      "recall": 1.0,
+      "specificity": 0.7348,
+      "f1_score": 0.2229,
+      "f1_score_std": 0.0135,
+      "support": 5.0,
+      "tp": 5.0,
+      "fp": 35.0,
+      "tn": 97.0,
+      "fn": 0.0
+    },
+    {
+      "class": "Unchecked Low Level Calls",
+      "precision": 0.499,
+      "recall": 0.9731,
+      "specificity": 0.4024,
+      "f1_score": 0.6597,
+      "f1_score_std": 0.0167,
+      "support": 52.0,
+      "tp": 50.6,
+      "fp": 50.8,
+      "tn": 34.2,
+      "fn": 1.4
+    }
+  ],
+  "macro_avg": {
+    "precision_mean": 0.2957,
+    "recall_mean": 0.7276,
+    "specificity_mean": 0.7356,
+    "f1_mean": 0.3788,
+    "f1_std": 0.0097
+  },
+  "micro_avg": {
+    "precision_mean": 0.302,
+    "recall_mean": 0.8525,
+    "specificity_mean": 0.7536,
+    "f1_mean": 0.446,
+    "f1_std": 0.0063
+  },
+  "weighted_avg": {
+    "precision_mean": 0.4131,
+    "recall_mean": 0.8525,
+    "specificity_mean": 0.5915,
+    "f1_mean": 0.5291,
+    "f1_std": 0.0088
+  }
+}
