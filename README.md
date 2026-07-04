@@ -1,5 +1,4 @@
 # Setup
-
 1. python -m venv .venv  (or python3)
    Create a private Python virtual environment.
 
@@ -11,8 +10,13 @@
 
 4. On Linux (optional): pip install flash-attn --no-build-isolation
 
-# Running experiment.py
+# Running the six prompt variations experiments for a specified model with a single command
+It's possible to run all the six configurations for a specified model by using the run_model_experiments.bat script:
+.\run_experiments.bat MODEL_NAME
 
+This script just iterates all the six configurations and runs experiment.py for each one.
+
+# Running experiment.py
 This script is the single entry point for the full experimental pipeline:
 1. Execution phase
    - Loads a chosen LLM.
@@ -30,7 +34,6 @@ This script is the single entry point for the full experimental pipeline:
    - Produces consolidated reports at the model–prompt level.
 
 ## Outputs
-
 For each run, the execution phase produces:
 - A CSV file containing latency, token counts, energy usage, and emissions.
 - A JSON file containing:
@@ -47,7 +50,6 @@ results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE/
 results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE_COT/
 
 ## Flags (execution phase)
-
 --model MODEL_NAME        (default: microsoft/Phi-3.5-mini-instruct)
 --dataset PATH            (required) Path to SmartBugs-Curated root
 --prompt KEY              (required) One of: ZS, ZS_COT, FS
@@ -56,7 +58,6 @@ results/Qwen__Qwen2.5-1.5B-Instruct/ZS_ROLE_COT/
 --sa_prompt SA_KEY        Semantic analysis prompt (default: SA)
 
 ### Prompt keys
-
 ZS       Zero-shot  
 ZS_COT   Zero-shot + Chain-of-Thought  
 FS       Few-shot  
@@ -68,7 +69,6 @@ ZS_ROLE_COT
 Role conditioning is applied exclusively via the system prompt.
 
 ## Example models
-
 sshleifer/tiny-gpt2                      Sanity-check model  
 microsoft/Phi-3.5-mini-instruct          Small LLM (3.8B params)
 Qwen/Qwen2.5-14B-Instruct                Medium LLM  
@@ -88,9 +88,7 @@ python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-cu
 ## Few-shot
 python -m src.experiment --model Qwen/Qwen2.5-7B-Instruct --dataset smartbugs-curated/dataset_cleaned_light --prompt FS --runs 5
 
-
 # Running evaluation.py
-
 This script performs the evaluation phase only and should be run after execution has produced JSON outputs.
 
 ## What it does
@@ -99,7 +97,6 @@ This script performs the evaluation phase only and should be run after execution
 - Computes per-class and macro-averaged metrics (precision, recall, specificity, F1-score).
 
 ## Flags
-
 --model MODEL_NAME  
 --prompt PROMPT_KEY  
 
@@ -110,22 +107,18 @@ PROMPT_KEY must match the effective prompt key used during execution
 python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_ROLE_COT
 
 ## Notes on reproducibility
-
 - Role conditioning is controlled exclusively via the --role flag.
 - Prompt keys explicitly encode the experimental condition.
 - Each configuration is stored in a separate results folder, preventing accidental mixing of runs.
 - The pipeline is fully deterministic except for model sampling, which is mitigated by repeated runs.
 
 # Evaluation and aggregation (optional)
-
 Normally, evaluation and aggregation are automatically executed by experiment.py.
 The scripts below are provided for convenience when re-running analysis without
 performing LLM inference again.
 
 ## Running evaluation.py
-
 python evaluation.py --model Qwen__Qwen2.5-1.5B-Instruct --prompt ZS_ROLE_COT
 
 ## Running aggregation.py
-
 python aggregation.py

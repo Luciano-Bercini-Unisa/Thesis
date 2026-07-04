@@ -180,7 +180,7 @@ def main():
                 "total_emissions_kg": _r_energy(combined_emissions),
                 "combined_latency_s": _r(combined_latency),
 
-                # Energy for a single execution (total VD+SA divded by the number of runs).
+                # Energy for a single execution (total VD+SA divided by the number of runs).
                 "energy_kwh_per_run": _r_energy(single_execution_energy),
 
                 # Trade-off metric: Macro F1/kWh single execution.

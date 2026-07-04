@@ -78,7 +78,7 @@ def main() -> None:
     if not args.skip_evaluation:
         run_py("evaluation", ["--model", safe_model, "--prompt", effective_prompt])
 
-    # 3. Aggregation (global over all models/prompts)
+    # 3. Aggregation (global over all models/prompts).
     if not args.skip_aggregation:
         run_py("aggregation", [])
 

@@ -227,8 +227,7 @@ def avg_metrics_rp(model: str, prompt: str):
         json.dump(out, f, indent=2)
 
 
-# ----------------------------------------------------------- heatmaps --
-
+# Heatmaps.
 def build_confusion_matrices(gt, predictions):
     matrices = {cls: np.zeros((2, 2), dtype=int) for cls in CATEGORIES}
     for item in predictions:
