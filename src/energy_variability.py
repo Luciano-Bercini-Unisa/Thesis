@@ -118,7 +118,7 @@ def main():
 
             by_model.setdefault(model, {})[prompt] = values
 
-    # --- Write summary CSV. ---
+    # Write summary CSV.
     if summary_rows:
         with open(SUMMARY_CSV, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=summary_rows[0].keys())
@@ -126,7 +126,7 @@ def main():
             writer.writerows(summary_rows)
         print(f"\nSummary written to {SUMMARY_CSV} ({len(summary_rows)} rows).")
 
-    # --- One boxplot per model. ---
+    # One boxplot per model.
     for model, prompts in by_model.items():
         labels = sorted(prompts.keys())
         data = [prompts[p] for p in labels]
