@@ -11,16 +11,26 @@ to outliers) alongside the mean.
 
 It also draws one boxplot per model (six configurations each), saved as PNG.
 
+Model selection:
+    By default (no arguments, or the single argument "all") every model
+    found under results/ is processed. Alternatively, pass one or more model
+    names to restrict the analysis to those models only.
+
 Usage (same style as aggregation.py):
-    python -m <package>.energy_variability
+    python -m src.energy_variability                 # all models
+    python -m src.energy_variability all             # all models
+    python -m src.energy_variability microsoft__phi-4 Qwen__Qwen2.5-7B-Instruct Qwen__Qwen2.5-14B-Instruct # selected models
 or, if run as a standalone file from the project root:
-    python energy_variability.py
+    python energy_variability.py [all | <model> <model> ...]
 
 Outputs (all under results/energy_variability/):
     energy_variability_summary.csv   (one row per model/prompt)
     boxplot_<model>.png              (one boxplot figure per model)
+    boxplot_combined.png             (all processed models side by side,
+                                      only when 2 or more models are processed)
 """
 
+import sys
 import csv
 import statistics
 from pathlib import Path
@@ -41,7 +51,7 @@ PHASE = "total"   # "vd" | "sa" | "total"
 
 def _per_run_energy(prompt_folder: Path):
     """
-    Return a list with one TOTAL energy value per run for the chosen phase.
+    Return a list with one total energy value per run for the chosen phase.
     Each run_XXX.csv is one run; its total energy is the sum over contracts.
     """
     values = []
@@ -62,9 +72,24 @@ def _per_run_energy(prompt_folder: Path):
     return values, [p.name for p in run_files]
 
 
-def main():
+def main(models=None):
+    """
+    Run the variability analysis.
+
+    Parameters
+    ----------
+    models : list[str] | None
+        Model names to process. If None, empty, or ["all"], every model
+        directory under results/ is processed.
+    """
     if not RESULTS_DIR.exists():
         raise SystemExit("results/ directory not found")
+
+    # Normalise the model selection into a set, or None meaning "all".
+    if not models or (len(models) == 1 and models[0].lower() == "all"):
+        selected = None
+    else:
+        selected = set(models)
 
     # Create the dedicated output subfolder (results/energy_variability/).
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,6 +101,12 @@ def main():
     for model_dir in sorted(RESULTS_DIR.iterdir()):
         if not model_dir.is_dir():
             continue
+        # Skip our own output subfolder and any model not selected.
+        if model_dir.name == OUTPUT_DIR.name:
+            continue
+        if selected is not None and model_dir.name not in selected:
+            continue
+
         for prompt_dir in sorted(model_dir.iterdir()):
             if not prompt_dir.is_dir():
                 continue
@@ -118,6 +149,11 @@ def main():
 
             by_model.setdefault(model, {})[prompt] = values
 
+    if selected is not None:
+        missing = selected - set(by_model.keys())
+        if missing:
+            print(f"\nWarning: no data found for requested models: {sorted(missing)}")
+
     # Write summary CSV.
     if summary_rows:
         with open(SUMMARY_CSV, "w", newline="", encoding="utf-8") as f:
@@ -130,9 +166,8 @@ def main():
     for model, prompts in by_model.items():
         labels = sorted(prompts.keys())
         data = [prompts[p] for p in labels]
-
         fig, ax = plt.subplots(figsize=(8, 4.5))
-        ax.boxplot(data, labels=labels, showmeans=True)
+        ax.boxplot(data, labels=labels, showmeans=True, showfliers=True)
         ax.set_ylabel(f"Energy per run ({PHASE}) [kWh]")
         ax.set_title(f"Per-run energy distribution: {model}")
         plt.xticks(rotation=30, ha="right")
@@ -142,6 +177,41 @@ def main():
         plt.close()
         print(f"Boxplot saved: {out}")
 
+    # Combined figure: all processed models side by side, one panel each,
+    # sharing the Y axis so panels are directly comparable.
+    processed = sorted(by_model.keys())
+    if len(processed) >= 2:
+        k = len(processed)
+        # Optimize reading on paper.
+        custom_params = {
+            'font.size': 14,
+            'axes.titlesize': 16,
+            'axes.labelsize': 18,
+            'xtick.labelsize': 14,
+            'ytick.labelsize': 14
+        }
+        # Use 'with plt.rc_context' to apply them ONLY to this block.
+        with plt.rc_context(custom_params):
+            fig, axes = plt.subplots(1, k, figsize=(4 * k, 6), sharey=True)
+            if k == 1:
+                axes = [axes]
+            for ax, model in zip(axes, processed):
+                labels = sorted(by_model[model].keys())
+                data = [by_model[model][p] for p in labels]
+                ax.boxplot(data, labels=labels, showmeans=True, showfliers=True)
+                ax.set_title(model)
+                ax.tick_params(axis="x", rotation=90)
+                for lbl in ax.get_xticklabels():
+                    lbl.set_ha("right")
+            axes[0].set_ylabel(f"Energy per run ({PHASE}) [kWh]")
+            plt.tight_layout()
+            combined = OUTPUT_DIR / "boxplot_combined.png"
+            plt.savefig(combined, dpi=200)
+            plt.close()
+            print(f"Combined boxplot saved: {combined}")
+
 
 if __name__ == "__main__":
-    main()
+    # Model names may be passed on the command line; no arguments (or "all")
+    # means process every model under results/.
+    main(sys.argv[1:])

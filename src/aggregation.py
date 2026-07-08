@@ -215,8 +215,6 @@ def main():
                 "vd_avg_latency_s": _r(df["vd_latency_s"].mean()),
                 "vd_total_energy_kwh": _r_energy(vd_total_energy),
                 "vd_total_emissions_kg": _r_energy(vd_total_emissions),
-                "vd_energy_kwh_per_1k_input_tokens": _r_energy(_per_1k(vd_total_energy, vd_input_tokens)),
-                "vd_energy_kwh_per_1k_output_tokens": _r_energy(_per_1k(vd_total_energy, vd_output_tokens)),
                 "vd_energy_kwh_per_1k_total_tokens": _r_energy(_per_1k(vd_total_energy, vd_total_tokens)),
                 "vd_total_latency_s": _r(vd_total_latency),
 
