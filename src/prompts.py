@@ -119,7 +119,9 @@ uint256 private seed;
 
 function play() public payable {
 	require(msg.value >= 1 ether);
-	if (block.blockhash(blockNumber) % 2 == 0) {
+	iteration++;
+	uint randomNumber = uint(keccak256(seed + iteration));
+	if (randomNumber % 2 == 0) {
 		msg.sender.transfer(this.balance);
 	}
 }

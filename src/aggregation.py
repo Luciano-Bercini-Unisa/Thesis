@@ -225,8 +225,6 @@ def main():
                 "sa_avg_latency_s": _r(df["sa_latency_s"].mean()),
                 "sa_total_energy_kwh": _r_energy(sa_total_energy),
                 "sa_total_emissions_kg": _r_energy(sa_total_emissions),
-                "sa_energy_kwh_per_1k_input_tokens": _r_energy(_per_1k(sa_total_energy, sa_input_tokens)),
-                "sa_energy_kwh_per_1k_output_tokens": _r_energy(_per_1k(sa_total_energy, sa_output_tokens)),
                 "sa_energy_kwh_per_1k_total_tokens": _r_energy(_per_1k(sa_total_energy, sa_total_tokens)),
                 "sa_total_latency_s": _r(sa_total_latency),
 
